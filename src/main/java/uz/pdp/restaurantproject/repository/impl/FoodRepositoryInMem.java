@@ -1,8 +1,9 @@
-package uz.pdp.restaurantproject.repository;
+package uz.pdp.restaurantproject.repository.impl;
 
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.model.Food;
 import uz.pdp.restaurantproject.model.dto.DataDto;
+import uz.pdp.restaurantproject.repository.FoodRepository;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +31,7 @@ public class FoodRepositoryInMem implements FoodRepository {
         if (findById(food.getId()).isPresent()) {
             delete(food);
         }
+
         foods.add(food);
         return food;
     }
@@ -41,5 +43,10 @@ public class FoodRepositoryInMem implements FoodRepository {
 
     public DataDto<List<Food>> findAll(BaseCriteria criteria) {
         return null;
+    }
+
+    @Override
+    public List<Food> findAll() {
+        return List.of();
     }
 }

@@ -1,18 +1,15 @@
 package uz.pdp.restaurantproject.bot;
 
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import uz.pdp.restaurantproject.model.OrderItem;
 import uz.pdp.restaurantproject.model.dto.FoodDto;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public class MarkupBoardService {
     private static MarkupBoardService instance;
@@ -25,8 +22,6 @@ public class MarkupBoardService {
     }
 
     public ReplyKeyboard mainMenu() {
-
-
         List<String> buttonTexts = List.of(
                 Constants.ICON_MENU,
                 Constants.MY_ORDERS,
@@ -34,19 +29,19 @@ public class MarkupBoardService {
         );
 
 
-        return prepareReplyKeyboard(buttonTexts, 2);
+        return prepareReplyKeyboard(buttonTexts);
     }
 
-    private ReplyKeyboardMarkup prepareReplyKeyboard(List<String> buttonTexts, int buttonsPerRow) {
+    private ReplyKeyboardMarkup prepareReplyKeyboard(List<String> buttonTexts) {
         List<KeyboardRow> keyboard = new ArrayList<>();
 
         KeyboardRow row = new KeyboardRow();
 
         for (int i = 0; i < buttonTexts.size(); i++) {
             row.add(buttonTexts.get(i));
-            if ((i + 1) % buttonsPerRow == 0 || i + 1 == buttonTexts.size()) {
+            if ((i + 1) % 2 == 0 || i + 1 == buttonTexts.size()) {
                 keyboard.add(row);
-                row = new KeyboardRow(); // Start a new row
+                row = new KeyboardRow();
             }
         }
 
@@ -87,4 +82,48 @@ public class MarkupBoardService {
 
         return markup;
     }
+
+    public ReplyKeyboard cartKeyboard(List<OrderItem> items) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+
+        for (OrderItem item : items) {
+            String foodId = item.getFood().getId();
+            int qty = item.getQuantity();
+
+            InlineKeyboardButton minus = InlineKeyboardButton.builder()
+                    .text(qty == 1 ? "Delete" : "-")
+                    .callbackData(qty == 1 ? "remove:" + foodId : "dec:" + foodId)  // убрать пробелы!
+                    .build();
+
+            InlineKeyboardButton count = InlineKeyboardButton.builder()
+                    .text(qty + " × " + item.getFood().getName())
+                    .callbackData("ignore")
+                    .build();
+
+            InlineKeyboardButton plus = InlineKeyboardButton.builder()
+                    .text("+")
+                    .callbackData("inc:" + foodId)
+                    .build();
+
+            rows.add(List.of(minus, count, plus));
+        }
+
+        List<InlineKeyboardButton> bottom  = new ArrayList<>();
+
+        bottom.add(InlineKeyboardButton.builder()
+                        .text("Clear")
+                        .callbackData("clear_cart")
+                .build());
+
+        bottom.add(InlineKeyboardButton.builder()
+                .text("Proceed to Payment")
+                .callbackData("checkout")
+                .build());
+        rows.add(bottom);
+
+        return InlineKeyboardMarkup.builder()
+                .keyboard(rows)
+                .build();
+    }
+
 }

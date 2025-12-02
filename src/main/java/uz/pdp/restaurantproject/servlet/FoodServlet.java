@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Part;
+
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.model.dto.DataDto;
 import uz.pdp.restaurantproject.model.dto.FoodCreateDto;
@@ -15,8 +16,11 @@ import uz.pdp.restaurantproject.model.dto.FoodDto;
 import uz.pdp.restaurantproject.model.dto.FoodUpdateDto;
 import uz.pdp.restaurantproject.service.FoodService;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.List;
+
 
 @WebServlet("/food")
 @MultipartConfig
@@ -79,6 +83,18 @@ public class FoodServlet extends HttpServlet {
         Integer quantity = Integer.parseInt(req.getParameter("quantity"));
         Part image = req.getPart("image");
         Boolean active = Boolean.parseBoolean(req.getParameter("active"));
+
+        String fileName;
+
+        if (image != null && image.getSize() > 0) {
+            fileName = Paths.get(image.getSubmittedFileName()).getFileName().toString();
+            String userHomeDir = System.getProperty("user.home") + "/uploads";
+            File uploads = new File(userHomeDir);
+            if (!uploads.exists()) uploads.mkdirs();
+            File file = new File(uploads, fileName);
+            image.write(file.getAbsolutePath());
+        }
+
         service.create(FoodCreateDto.builder()
                 .active(active)
                 .name(name)
@@ -87,7 +103,6 @@ public class FoodServlet extends HttpServlet {
                 .totalAmount(quantity)
                 .image(image)
                 .build());
-
     }
 
     private void update(HttpServletRequest req) throws ServletException, IOException {
@@ -96,11 +111,22 @@ public class FoodServlet extends HttpServlet {
         String description = req.getParameter("description");
         Double price = Double.parseDouble(req.getParameter("price"));
         Integer quantity = Integer.parseInt(req.getParameter("quantity"));
-        Part part = req.getPart("image");
+        Part image = req.getPart("image");
         Boolean active = Boolean.parseBoolean(req.getParameter("active"));
 
+        String fileName;
+
+        if (image != null && image.getSize() > 0) {
+            fileName = Paths.get(image.getSubmittedFileName()).getFileName().toString();
+            String userHomeDir = System.getProperty("user.home") + "/uploads";
+            File uploads = new File(userHomeDir);
+            if (!uploads.exists()) uploads.mkdirs();
+            File file = new File(uploads, fileName);
+            image.write(file.getAbsolutePath());
+        }
+
         service.update(FoodUpdateDto.builder()
-                .image(part)
+                .image(image)
                 .description(description)
                 .price(price)
                 .totalAmount(quantity)

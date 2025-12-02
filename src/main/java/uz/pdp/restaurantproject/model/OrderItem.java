@@ -2,6 +2,8 @@ package uz.pdp.restaurantproject.model;
 
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -14,17 +16,16 @@ import uz.pdp.restaurantproject.model.base.AuditableEntity;
 @Getter
 @Setter
 @Entity
-@Table(name = "foods")
-public class Food extends AuditableEntity {
+@Table(name = "order_items")
+public class OrderItem extends AuditableEntity {
+    @ManyToOne
+    @JoinColumn(name = "order_id", nullable = false)
+    private Order order;
 
-    private String name;
+    @ManyToOne
+    @JoinColumn(name = "food_id", nullable = false)
+    private Food food;
 
-    private String description;
-
+    private Integer quantity = 1;
     private Double price;
-    private String image;
-
-    private Boolean active = true;
-
-    private Integer totalAmount = 0;
 }

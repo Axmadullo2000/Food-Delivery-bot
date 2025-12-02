@@ -2,22 +2,20 @@ package uz.pdp.restaurantproject.validator;
 
 import uz.pdp.restaurantproject.model.Food;
 import uz.pdp.restaurantproject.repository.FoodRepository;
-import uz.pdp.restaurantproject.repository.FoodRepositoryImpl;
+import uz.pdp.restaurantproject.repository.impl.FoodRepositoryImpl;
 
 public class FoodValidator {
     private final FoodRepository repository = FoodRepositoryImpl.getInstance();
     private static FoodValidator instance;
 
-    private FoodValidator() {
-
-    }
+    private FoodValidator() {}
 
     public static FoodValidator getInstance() {
         if (instance == null) {
             instance = new FoodValidator();
         }
-        return instance;
 
+        return instance;
     }
 
     public Food existsAndGet(String id) {

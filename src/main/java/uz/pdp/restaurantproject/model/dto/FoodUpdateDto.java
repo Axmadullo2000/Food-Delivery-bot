@@ -17,4 +17,3 @@ public class FoodUpdateDto {
     private Boolean active;
     private Integer totalAmount;
 }
-

@@ -1,9 +1,8 @@
 package uz.pdp.restaurantproject.bot;
 
-import lombok.SneakyThrows;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.api.methods.send.SendLocation;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
@@ -20,19 +19,25 @@ public class RestaurantBot extends TelegramLongPollingBot {
     }
 
     public RestaurantBot() {
-        super("8476604088:AAFdof23KL9Jrul86hejkgpxeQ4HrAzvc8g");
+        super("8573929670:AAH8KL4EeO4w_audUKGiw8Uv9liBxGKlWSg");
     }
 
     @Override
-    @SneakyThrows
     public void onUpdateReceived(Update update) {
-        if (update.hasCallbackQuery()) {
-            callBackHandler.handle(update.getCallbackQuery());
+        System.out.println("=== Получен Update ===");
+        System.out.println("Has message: " + update.hasMessage());
+        System.out.println("Has callback: " + update.hasCallbackQuery());
 
+        if (update.hasMessage()) {
+            System.out.println("Message text: " + update.getMessage().getText());
+        }
+
+        if (update.hasCallbackQuery()) {
+            System.out.println("Callback data: " + update.getCallbackQuery().getData());
+            callBackHandler.handle(update.getCallbackQuery());
         } else if (update.hasMessage()) {
             messageHandler.handle(update.getMessage());
         }
-
     }
 
     public int sendMessage(SendMessage message) {
@@ -46,8 +51,15 @@ public class RestaurantBot extends TelegramLongPollingBot {
 
     @Override
     public String getBotUsername() {
-        return "@onlayntaklifbot";
+        return "@girgitton_express_bot";
     }
 
-
+    public void sendPhoto(SendPhoto sendPhoto) {
+        try {
+            execute(sendPhoto);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+    }
 }

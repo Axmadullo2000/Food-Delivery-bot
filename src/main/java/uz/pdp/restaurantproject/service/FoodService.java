@@ -10,7 +10,7 @@ import uz.pdp.restaurantproject.model.dto.FoodCreateDto;
 import uz.pdp.restaurantproject.model.dto.FoodDto;
 import uz.pdp.restaurantproject.model.dto.FoodUpdateDto;
 import uz.pdp.restaurantproject.repository.FoodRepository;
-import uz.pdp.restaurantproject.repository.FoodRepositoryImpl;
+import uz.pdp.restaurantproject.repository.impl.FoodRepositoryImpl;
 import uz.pdp.restaurantproject.validator.FoodValidator;
 
 import java.util.List;
@@ -27,6 +27,7 @@ public class FoodService extends AbstractService<FoodRepository, FoodMapper, Foo
         if (instance == null) {
             instance = new FoodService();
         }
+
         return instance;
     }
 
@@ -38,6 +39,7 @@ public class FoodService extends AbstractService<FoodRepository, FoodMapper, Foo
 
     public List<FoodDto> getAll() {
         List<Food> foods = repository.findAll();
+
         return mapper.toDto(foods);
     }
 

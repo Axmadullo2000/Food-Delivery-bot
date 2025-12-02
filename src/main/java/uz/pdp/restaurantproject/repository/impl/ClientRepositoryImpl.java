@@ -1,4 +1,4 @@
-package uz.pdp.restaurantproject.repository;
+package uz.pdp.restaurantproject.repository.impl;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
@@ -6,9 +6,12 @@ import uz.pdp.restaurantproject.config.JPAConfig;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.model.Client;
 import uz.pdp.restaurantproject.model.dto.DataDto;
+import uz.pdp.restaurantproject.repository.ClientRepository;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class ClientRepositoryImpl implements ClientRepository {
 
@@ -23,7 +26,7 @@ public class ClientRepositoryImpl implements ClientRepository {
 
     @Override
     public Optional<Client> findById(String id) {
-        return Optional.empty();
+        return findByChatId(id);
     }
 
     @Override
@@ -48,7 +51,17 @@ public class ClientRepositoryImpl implements ClientRepository {
 
     @Override
     public DataDto<List<Client>> findAll(BaseCriteria criteria) {
-        return null;
+        EntityManager entityManager = JPAConfig.getEntityManager();
+        List<Client> all = entityManager.createQuery("SELECT c FROM Client c WHERE c.fullName = :name", Client.class)
+                .setParameter("name", criteria)
+                .getResultList();
+
+        return new DataDto<>(all, 0);
+    }
+
+    @Override
+    public List<Client> findAll() {
+        return new ArrayList<>(findAll());
     }
 
     @Override

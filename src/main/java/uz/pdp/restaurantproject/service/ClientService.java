@@ -5,7 +5,7 @@ import uz.pdp.restaurantproject.model.Client;
 import uz.pdp.restaurantproject.model.dto.ClientCreateDto;
 import uz.pdp.restaurantproject.model.dto.ClientDto;
 import uz.pdp.restaurantproject.repository.ClientRepository;
-import uz.pdp.restaurantproject.repository.ClientRepositoryImpl;
+import uz.pdp.restaurantproject.repository.impl.ClientRepositoryImpl;
 
 import java.util.Optional;
 
@@ -51,5 +51,10 @@ public class ClientService {
                 .latitude(client.getLatitude())
                 .longitude(client.getLongitude())
                 .build();
+    }
+
+    public Optional<Client> findByChatId(String chatId) {
+        Optional<Client> byChatId = repository.findByChatId(chatId);
+        return byChatId;
     }
 }

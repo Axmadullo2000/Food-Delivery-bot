@@ -9,10 +9,11 @@ public class FileService {
         if (instance == null) {
             instance = new  FileService();
         }
+
         return instance;
     }
 
     public String upload(Part image) {
-        return null;
+        return image.getSubmittedFileName();
     }
 }

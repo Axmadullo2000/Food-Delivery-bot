@@ -45,6 +45,7 @@ public class FoodMapper {
             String url = fileService.upload(dto.getImage());
             food.setImage(url);
         }
+
         food.setName(dto.getName());
         food.setDescription(dto.getDescription());
         food.setPrice(dto.getPrice());
@@ -55,6 +56,7 @@ public class FoodMapper {
 
     public Food fromDto(FoodCreateDto dto) {
         String url = fileService.upload(dto.getImage());
+        System.out.println("url: " + url);
         Food food = new Food();
         food.setName(dto.getName());
         food.setDescription(dto.getDescription());

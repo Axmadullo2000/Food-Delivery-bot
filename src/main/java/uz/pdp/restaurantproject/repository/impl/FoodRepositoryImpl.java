@@ -1,4 +1,4 @@
-package uz.pdp.restaurantproject.repository;
+package uz.pdp.restaurantproject.repository.impl;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
@@ -6,6 +6,7 @@ import uz.pdp.restaurantproject.config.JPAConfig;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.model.Food;
 import uz.pdp.restaurantproject.model.dto.DataDto;
+import uz.pdp.restaurantproject.repository.FoodRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,8 +31,6 @@ public class FoodRepositoryImpl implements FoodRepository {
 
     @Override
     public Food save(Food food) {
-
-
         EntityManager entityManager = JPAConfig.getEntityManager();
         entityManager.getTransaction().begin();
         if (findById(food.getId()).isPresent()) {

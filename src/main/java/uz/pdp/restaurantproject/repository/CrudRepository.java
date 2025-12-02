@@ -3,7 +3,6 @@ package uz.pdp.restaurantproject.repository;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.model.dto.DataDto;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,7 +20,5 @@ public interface CrudRepository<M, I> {
 
     DataDto<List<M>> findAll(BaseCriteria criteria);
 
-    default List<M> findAll() {
-        return Collections.emptyList();
-    }
+    List<M> findAll();
 }

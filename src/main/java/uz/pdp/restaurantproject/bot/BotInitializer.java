@@ -10,10 +10,12 @@ import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 @WebListener
 public class BotInitializer implements ServletContextListener {
     public void contextInitialized(ServletContextEvent sce) {
+        System.out.println("=== Инициализация бота ===");
 
         try {
             TelegramBotsApi telegramBotsApi = new TelegramBotsApi(DefaultBotSession.class);
             telegramBotsApi.registerBot(RestaurantBot.getInstance());
+            System.out.println("=== Бот успешно зарегистрирован ===");
 
         } catch (TelegramApiException e) {
             throw new RuntimeException(e);
