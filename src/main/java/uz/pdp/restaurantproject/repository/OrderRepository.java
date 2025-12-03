@@ -16,4 +16,6 @@ public interface OrderRepository extends CrudRepository<Order, String> {
     Order getUserOrders(String chatId);
 
     List<Order> findOrdersByClientChatId(String chatId);
+
+    Order getByIdWithDetails(String orderId);
 }

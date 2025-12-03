@@ -1,6 +1,7 @@
 package uz.pdp.restaurantproject.repository.impl;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.TypedQuery;
 import uz.pdp.restaurantproject.config.JPAConfig;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
@@ -31,99 +32,170 @@ public class OrderRepositoryImpl implements OrderRepository {
         try {
             Order order = entityManager.find(Order.class, id);
             return Optional.ofNullable(order);
-        }finally {
+        } finally {
             entityManager.close();
         }
     }
 
     @Override
     public Order save(Order order) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
+        EntityManager em = JPAConfig.getEntityManager();
+        EntityTransaction tx = em.getTransaction();
 
         try {
-            entityManager.getTransaction().begin();
+            tx.begin();
 
-            if (order.getId() != null && entityManager.find(Order.class, order.getId()) != null) {
-                order = entityManager.merge(order);
+            Order managedOrder;
+
+            if (order.getId() == null) {
+                em.persist(order);
+                managedOrder = order;
             } else {
-                entityManager.persist(order);
+                managedOrder = em.merge(order);
             }
 
-            entityManager.getTransaction().commit();
-            return order;
+            tx.commit();
+            return managedOrder;
+
         } catch (Exception e) {
-            if (entityManager.getTransaction().isActive()) {
-                entityManager.getTransaction().rollback();
-            }
-            e.printStackTrace();
-            throw new RuntimeException(e);
-        }
-        finally {
-            entityManager.close();
+            if (tx.isActive()) tx.rollback();
+            throw new RuntimeException("Ошибка сохранения заказа", e);
+        } finally {
+            em.close();
         }
     }
 
     @Override
     public void delete(Order order) {
-
+        // Реализация при необходимости
     }
 
     @Override
     public DataDto<List<Order>> findAll(BaseCriteria criteria) {
         EntityManager entityManager = JPAConfig.getEntityManager();
-        TypedQuery<Order> query = entityManager.createQuery("SELECT o FROM OrderItem o WHERE o.food.name = :foodName", Order.class);
+        TypedQuery<Order> query = entityManager.createQuery(
+                "SELECT o FROM OrderItem o WHERE o.food.name = :foodName", Order.class);
         List<Order> orders = query.getResultList();
 
-        DataDto<List<Order>> dto = new DataDto<>(orders, 1);
-        return dto;
+        return new DataDto<>(orders, 1);
     }
 
     @Override
     public List<Order> findAll() {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-        TypedQuery<Order> query = entityManager.createQuery("SELECT o FROM Order o", Order.class);
-        return query.getResultList();
+        EntityManager em = JPAConfig.getEntityManager();
 
+        try {
+            String jpql = """
+            SELECT DISTINCT o FROM Order o
+            LEFT JOIN FETCH o.items i
+            LEFT JOIN FETCH i.food f
+            LEFT JOIN FETCH o.client c
+            WHERE o.status != 'CART'
+            ORDER BY o.createdAt DESC
+            """;
+
+            List<Order> orders = em.createQuery(jpql, Order.class).getResultList();
+
+            // Инициализируем коллекции пока EntityManager открыт
+            orders.forEach(o -> {
+                if (o.getItems() != null) {
+                    o.getItems().size();
+                }
+                if (o.getClient() != null) {
+                    o.getClient().getChatId(); // Инициализируем клиента
+                }
+            });
+
+            return orders;
+        } finally {
+            em.close();
+        }
+    }
+
+    // ИСПРАВЛЕНО: Загружаем ВСЁ сразу через JOIN FETCH
+    public Order getByIdWithDetails(String orderId) {
+        EntityManager em = JPAConfig.getEntityManager();
+
+        try {
+            String jpql = """
+                SELECT DISTINCT o FROM Order o
+                LEFT JOIN FETCH o.items i
+                LEFT JOIN FETCH i.food
+                LEFT JOIN FETCH o.client
+                WHERE o.id = :id
+                """;
+
+            Order order = em.createQuery(jpql, Order.class)
+                    .setParameter("id", orderId)
+                    .getSingleResult();
+
+            // Инициализируем коллекцию пока EntityManager открыт
+            if (order.getItems() != null) {
+                order.getItems().size();
+            }
+
+            return order;
+        } finally {
+            em.close();
+        }
     }
 
     public Order findActiveCartByClientChatId(String chatId) {
         EntityManager em = JPAConfig.getEntityManager();
 
         try {
-            return em.createQuery("SELECT o FROM Order o LEFT JOIN o.items WHERE o.client.chatId = :chatId AND o.status = 'CART'", Order.class)
-                    .setParameter("chatId", chatId).getSingleResult();
-        }catch (Exception e) {
+            return em.createQuery(
+                            "SELECT o FROM Order o " +
+                                    "LEFT JOIN FETCH o.items " +
+                                    "WHERE o.client.chatId = :chatId AND o.status = 'CART'",
+                            Order.class)
+                    .setParameter("chatId", chatId)
+                    .getSingleResult();
+        } catch (Exception e) {
             return null;
-        }finally {
+        } finally {
             em.close();
         }
     }
 
-    // Upon request
     public Order getCart(String chatId) {
         EntityManager em = JPAConfig.getEntityManager();
-        Order activeOrder = findActiveCartByClientChatId(chatId);
+        try {
+            String jpql = """
+            SELECT DISTINCT o
+            FROM Order o
+            JOIN FETCH o.items i
+            JOIN FETCH i.food
+            JOIN FETCH o.client c
+            WHERE c.chatId = :chatId
+              AND o.status = 'CART'
+            """;
 
-        if (activeOrder == null) return null;
+            List<Order> result = em.createQuery(jpql, Order.class)
+                    .setParameter("chatId", chatId)
+                    .getResultList();
 
-        List<OrderItem> items = em.createQuery("SELECT i FROM OrderItem i WHERE i.order.id = :orderId", OrderItem.class)
-                .setParameter("orderId", activeOrder.getId()).getResultList();
+            return result.isEmpty() ? null : result.get(0);
 
-        activeOrder.setItems(items);
-        return activeOrder;
+        } finally {
+            em.close();
+        }
     }
 
     @Override
-    public void updateOrderItem(OrderItem exisingItem) {
+    public void updateOrderItem(OrderItem existingItem) {
         EntityManager entityManager = JPAConfig.getEntityManager();
 
         try {
             entityManager.getTransaction().begin();
-            entityManager.merge(exisingItem);
+            entityManager.merge(existingItem);
             entityManager.getTransaction().commit();
-        }catch (Exception e) {
-            entityManager.getTransaction().rollback();
-        }finally {
+        } catch (Exception e) {
+            if (entityManager.getTransaction().isActive()) {
+                entityManager.getTransaction().rollback();
+            }
+            throw new RuntimeException("Ошибка обновления OrderItem", e);
+        } finally {
             entityManager.close();
         }
     }
@@ -136,9 +208,12 @@ public class OrderRepositoryImpl implements OrderRepository {
             entityManager.getTransaction().begin();
             entityManager.persist(newItem);
             entityManager.getTransaction().commit();
-        }catch (Exception e) {
-            entityManager.getTransaction().rollback();
-        }finally {
+        } catch (Exception e) {
+            if (entityManager.getTransaction().isActive()) {
+                entityManager.getTransaction().rollback();
+            }
+            throw new RuntimeException("Ошибка создания OrderItem", e);
+        } finally {
             entityManager.close();
         }
     }
@@ -148,15 +223,16 @@ public class OrderRepositoryImpl implements OrderRepository {
 
         try {
             return em.createQuery(
-                            "SELECT o FROM Order o LEFT JOIN FETCH o.items WHERE o.client.chatId = :chatId AND o.status = :status",
+                            "SELECT o FROM Order o " +
+                                    "LEFT JOIN FETCH o.items " +
+                                    "WHERE o.client.chatId = :chatId AND o.status = :status",
                             Order.class)
                     .setParameter("chatId", chatId)
                     .setParameter("status", OrderStatus.CART)
                     .getSingleResult();
-        }catch (Exception e) {
+        } catch (Exception e) {
             return null;
-        }
-        finally {
+        } finally {
             em.close();
         }
     }
@@ -165,9 +241,16 @@ public class OrderRepositoryImpl implements OrderRepository {
     public List<Order> findOrdersByClientChatId(String chatId) {
         EntityManager em = JPAConfig.getEntityManager();
         try {
-            return em.createQuery(
-                            "SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.client.chatId = :chatId AND o.status != :status ORDER BY o.createdAt DESC",
-                            Order.class)
+            String jpql = """
+                SELECT DISTINCT o FROM Order o
+                LEFT JOIN FETCH o.items i
+                LEFT JOIN FETCH i.food
+                WHERE o.client.chatId = :chatId
+                AND o.status != :status
+                ORDER BY o.createdAt DESC
+                """;
+
+            return em.createQuery(jpql, Order.class)
                     .setParameter("chatId", chatId)
                     .setParameter("status", OrderStatus.CART)
                     .getResultList();
@@ -175,5 +258,4 @@ public class OrderRepositoryImpl implements OrderRepository {
             em.close();
         }
     }
-
 }

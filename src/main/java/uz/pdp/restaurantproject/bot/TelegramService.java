@@ -1,11 +1,10 @@
 package uz.pdp.restaurantproject.bot;
 
-
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Message;
-import uz.pdp.restaurantproject.model.CartItemDto;
 import uz.pdp.restaurantproject.model.Client;
 import uz.pdp.restaurantproject.model.Order;
 import uz.pdp.restaurantproject.model.OrderItem;
@@ -17,10 +16,7 @@ import uz.pdp.restaurantproject.service.FoodService;
 import uz.pdp.restaurantproject.service.OrderService;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,7 +28,6 @@ public class TelegramService {
     private final ClientService clientService = ClientService.getInstance();
     private final MarkupBoardService markupBoardService = MarkupBoardService.getInstance();
 
-
     private TelegramService() {}
 
     public static TelegramService getInstance() {
@@ -43,7 +38,7 @@ public class TelegramService {
     }
 
     public void sendWelcomeMessage(SendMessage sendMessage) {
-        String welcomeMessage = "Welcome to My restaurant, Girgitton Express !";
+        String welcomeMessage = "Welcome to My restaurant, Girgitton Express!";
         sendMessage.setText(welcomeMessage);
         sendMessage.setReplyMarkup(markupBoardService.mainMenu());
         RestaurantBot.getInstance().sendMessage(sendMessage);
@@ -103,15 +98,10 @@ public class TelegramService {
             }
 
         } catch (Exception e) {
+            System.err.println("Error in sendFoodInfo: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
-
-    /*public void addFoodToCart(String data, String chatId) {
-        String foodId = data.replace(Constants.ADD_FOOD_TO_CART, "");
-        orderService.addToCart(foodId, chatId);
-    }*/
 
     public void addFoodToCart(String data, String chatId, String userName) {
         // Проверяем клиента
@@ -130,7 +120,6 @@ public class TelegramService {
         orderService.addToCart(foodId, chatId);
     }
 
-
     public void registerClient(Message message, String chatId) {
         ClientDto client = clientService.getByChatId(chatId);
         if (client == null) {
@@ -142,107 +131,141 @@ public class TelegramService {
     }
 
     public void sendCart(String chatId) {
-        String cartText = buildCartText(chatId);
         Order cart = orderService.getCart(chatId);
 
-        SendMessage sm = SendMessage.builder()
-                .chatId(chatId)
-                .parseMode("Markdown")
-                .text(cartText)
-                .build();
-
+        // ИСПРАВЛЕНО: используем правильный тип для клавиатуры
         if (cart == null || cart.getItems().isEmpty()) {
-            sm.setText("Cart is empty");
-            sm.setReplyMarkup(markupBoardService.mainMenu());
+            SendMessage sm = SendMessage.builder()
+                    .chatId(chatId)
+                    .text("🛒 Cart is empty")
+                    .parseMode("Markdown")
+                    .replyMarkup(markupBoardService.mainMenu())
+                    .build();
+
+            RestaurantBot.getInstance().sendMessage(sm);
         } else {
-            StringBuilder text = new StringBuilder("Cart:\n\n");
+            StringBuilder sb = new StringBuilder("🛒 *Cart:*\n\n");
 
             double totalPrice = 0;
 
             for (OrderItem item : cart.getItems()) {
                 double linePrice = item.getPrice() * item.getQuantity();
                 totalPrice += linePrice;
-                text.append("%d × %s — %.0f sum\n".formatted(item.getQuantity(), item.getFood().getName(), linePrice));
+                sb.append(String.format("%d × %s — %.0f sum\n",
+                        item.getQuantity(),
+                        item.getFood().getName(),
+                        linePrice));
             }
 
-            text.append("\nTotal price: %.0f sum".formatted(totalPrice));
-            sm.setText(text.toString());
-            sm.setReplyMarkup(markupBoardService.cartKeyboard(cart.getItems()));
-        }
+            sb.append(String.format("\n*Total: %.0f sum*", totalPrice));
 
-        RestaurantBot.getInstance().sendMessage(sm);
+            SendMessage sm = SendMessage.builder()
+                    .chatId(chatId)
+                    .text(sb.toString())
+                    .parseMode("Markdown")
+                    .replyMarkup(markupBoardService.cartKeyboard(cart.getItems()))
+                    .build();
+
+            RestaurantBot.getInstance().sendMessage(sm);
+        }
     }
 
-    private String buildCartText(String chatId) {
-        Order cart = orderService.getCartItemsByUserId(chatId);
-
-        if (cart == null || cart.getItems().isEmpty()) {
-            return "🛒 Your cart is empty";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("🛒 *Your Cart:*\n\n");
-
-        double total = 0;
-
-        List<OrderItem> items = cart.getItems();
-
-        for (int i = 0; i < items.size(); i++) {
-            OrderItem item = items.get(i);
-
-            double itemTotal = item.getQuantity() * item.getPrice();
-            total += itemTotal;
-
-            sb.append(i + 1)
-                    .append(". ")
-                    .append(item.getFood().getName())
-                    .append(" x ")
-                    .append(item.getQuantity())
-                    .append(itemTotal)
-                    .append("sum\n");
-        }
-
-        sb.append("\n*Total:* ").append(total).append(" sum");
-
-        return sb.toString();
-    }
-
-    public void sendMyOrders (String chatId){
+    // ИСПРАВЛЕНО: метод sendMyOrders
+    public void sendMyOrders(String chatId) {
         List<Order> orders = orderService.getUserOrders(chatId);
 
-        SendMessage sm = SendMessage.builder()
-                .chatId(chatId)
-                .build();
+        String text;
 
         if (orders.isEmpty()) {
-            sm.setText("No orders yet. Make your first one now and enjoy great food.");
-            sm.setReplyMarkup(markupBoardService.mainMenu());
+            text = "📦 No orders yet.\n\nMake your first order now and enjoy great food!";
         } else {
-            StringBuilder sb = new StringBuilder("**Orders:\n\n");
+            StringBuilder sb = new StringBuilder("📦 *Your Orders:*\n\n");
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
             for (int i = 0; i < orders.size(); i++) {
                 Order order = orders.get(i);
 
-                sb.append("%d. %s\n".formatted(i + 1, order.getCreatedAt()));
+                // Заголовок заказа
+                sb.append(String.format("*Order #%d*\n", i + 1));
+                sb.append(String.format("📅 %s\n", order.getCreatedAt().format(formatter)));
+                sb.append(String.format("📊 Status: %s\n\n", getStatusEmoji(order.getStatus())));
 
+                // Позиции заказа
                 double orderTotal = 0;
 
                 for (OrderItem item : order.getItems()) {
-                    double line = item.getPrice() * item.getQuantity();
-                    orderTotal += line;
+                    double linePrice = item.getPrice() * item.getQuantity();
+                    orderTotal += linePrice;
 
-                    sb.append("   • %d × %s — %.0f sum\n"
-                            .formatted(item.getQuantity(), item.getFood().getName(), line));
+                    sb.append(String.format("   • %d × %s — %.0f sum\n",
+                            item.getQuantity(),
+                            item.getFood().getName(),
+                            linePrice));
                 }
 
-                sb.append("\n*Total price: %.0f sum*\n\n".formatted(orderTotal));
+                sb.append(String.format("\n*Total: %.0f sum*\n", orderTotal));
+                sb.append("────────────────────\n\n");
             }
 
-            sm.setText(sb.toString());
-            sm.setParseMode("Markdown");
-            sm.setReplyMarkup(markupBoardService.mainMenu());
+            text = sb.toString();
         }
 
+        SendMessage sm = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .parseMode("Markdown")
+                .replyMarkup(markupBoardService.mainMenu())
+                .build();
+
         RestaurantBot.getInstance().sendMessage(sm);
+    }
+
+    // Вспомогательный метод для красивого отображения статусов
+    private String getStatusEmoji(uz.pdp.restaurantproject.model.enums.OrderStatus status) {
+        return switch (status) {
+            case CREATED -> "🆕 Created";
+            case CONFIRMED -> "✅ Confirmed";
+            case PREPARING -> "👨‍🍳 Preparing";
+            case IN_DELIVERY -> "🚗 In Delivery";
+            case DELIVERED -> "✅ Delivered";
+            case CANCELED -> "❌ Canceled";
+            case CART -> "🛒 In Cart";
+        };
+    }
+
+    private void updateCartMessage(String chatId, Integer messageId) {
+        Order cart = OrderService.getInstance().getCart(chatId);
+
+        EditMessageText editMessage = EditMessageText.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .parseMode("Markdown")
+                .build();
+
+        if (cart == null || cart.getItems().isEmpty()) {
+            editMessage.setText("🛒 Cart is empty");
+            editMessage.setReplyMarkup(null);
+        } else {
+            StringBuilder text = new StringBuilder("🛒 *Cart:*\n\n");
+
+            double totalPrice = 0;
+
+            for (OrderItem item : cart.getItems()) {
+                double linePrice = item.getPrice() * item.getQuantity();
+                totalPrice += linePrice;
+                text.append(String.format("%d × %s — %.0f sum\n",
+                        item.getQuantity(),
+                        item.getFood().getName(),
+                        linePrice
+                ));
+            }
+
+            text.append(String.format("\n*Total: %.0f sum*", totalPrice));
+            editMessage.setText(text.toString());
+            editMessage.setReplyMarkup(markupBoardService.cartInlineKeyboard(cart.getItems()));
+        }
+
+        RestaurantBot.getInstance().editMessage(editMessage);
     }
 }

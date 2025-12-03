@@ -18,10 +18,12 @@ public class AdminOrdersServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        List<Order> orders = orderService.getAllOrdersExceptCart();
+        List<Order> activeOrders = orderService.getActiveOrders();
+        List<Order> orderHistory = orderService.getHistoryOrders();
 
-        System.out.println("orders " + orders);
-        req.setAttribute("orders", orders);
+        System.out.println("orders " + activeOrders);
+        req.setAttribute("orders", activeOrders);
+        req.setAttribute("orderHistory", orderHistory);
 
         req.getRequestDispatcher("/WEB-INF/admin/orders.jsp").forward(req, resp);
     }

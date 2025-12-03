@@ -22,9 +22,11 @@ public class AdminOrderStatusServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         String orderId = req.getParameter("orderId");
-        String statusStr = req.getParameter("status");
+        String statusStr = req.getParameter("newStatus");
 
         OrderStatus newStatus = OrderStatus.valueOf(statusStr.toUpperCase());
+
+        System.out.println("Order newStatus: " + newStatus);
         orderService.updateOrderStatus(orderId, newStatus);
 
         resp.sendRedirect("/admin/orders");

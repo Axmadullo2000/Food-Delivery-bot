@@ -126,4 +126,58 @@ public class MarkupBoardService {
                 .build();
     }
 
+    public InlineKeyboardMarkup cartInlineKeyboard(List<OrderItem> items) {
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+
+        // Кнопки для каждого товара (-, количество, +)
+        for (OrderItem item : items) {
+            List<InlineKeyboardButton> row = new ArrayList<>();
+
+            // Кнопка уменьшения
+            InlineKeyboardButton decreaseBtn = InlineKeyboardButton.builder()
+                    .text("➖")
+                    .callbackData("dec:" + item.getFood().getId())
+                    .build();
+
+            // Показываем текущее количество
+            InlineKeyboardButton quantityBtn = InlineKeyboardButton.builder()
+                    .text(item.getFood().getName() + " (" + item.getQuantity() + ")")
+                    .callbackData("info:" + item.getFood().getId())
+                    .build();
+
+            // Кнопка увеличения
+            InlineKeyboardButton increaseBtn = InlineKeyboardButton.builder()
+                    .text("➕")
+                    .callbackData("inc:" + item.getFood().getId())
+                    .build();
+
+            row.add(decreaseBtn);
+            row.add(quantityBtn);
+            row.add(increaseBtn);
+
+            keyboard.add(row);
+        }
+
+        // Нижний ряд с кнопками "Очистить корзину" и "Оформить заказ"
+        List<InlineKeyboardButton> bottomRow = new ArrayList<>();
+
+        InlineKeyboardButton clearBtn = InlineKeyboardButton.builder()
+                .text("🗑 Очистить корзину")
+                .callbackData("clear_cart")
+                .build();
+
+        InlineKeyboardButton checkoutBtn = InlineKeyboardButton.builder()
+                .text("✅ Оформить заказ")
+                .callbackData("checkout")
+                .build();
+
+        bottomRow.add(clearBtn);
+        bottomRow.add(checkoutBtn);
+
+        keyboard.add(bottomRow);
+
+        return InlineKeyboardMarkup.builder()
+                .keyboard(keyboard)
+                .build();
+    }
 }
