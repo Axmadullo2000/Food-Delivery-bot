@@ -38,9 +38,9 @@
 
 ## Скриншоты (вставь свои — будет огонь)
 
-![Меню](screenshots/menu.jpg)
-![Корзина](screenshots/cart.jpg)
-![Админка](screenshots/admin.jpg)
+![Меню](screenshots/menu.png)
+![Корзина](screenshots/cart.png)
+![Админка](screenshots/admin.png)
 
 ## Как запустить локально (30 секунд
 
