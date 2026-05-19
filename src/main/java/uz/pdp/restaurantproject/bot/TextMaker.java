@@ -2,23 +2,20 @@ package uz.pdp.restaurantproject.bot;
 
 import uz.pdp.restaurantproject.model.dto.FoodDto;
 
-public class TextMaker {
-    private static TextMaker instance;
+public final class TextMaker {
+    private static final TextMaker INSTANCE = new TextMaker();
+
+    private TextMaker() {}
 
     public static TextMaker getInstance() {
-        if (instance == null) {
-            instance = new TextMaker();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     public String prepareFoodInfo(FoodDto food) {
-
-        StringBuilder foodInfo = new StringBuilder();
-        foodInfo.append("Name: " + food.getName())
-                .append("\nPrice: " + food.getPrice())
-                .append("\nDescription: " + food.getDescription());
-
-        return foodInfo.toString();
+        return new StringBuilder()
+                .append("Name: ").append(food.getName())
+                .append("\nPrice: ").append(food.getPrice())
+                .append("\nDescription: ").append(food.getDescription())
+                .toString();
     }
 }

@@ -7,40 +7,28 @@ import org.telegram.telegrambots.meta.TelegramBotsApi;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @WebListener
 public class BotInitializer implements ServletContextListener {
-    private Thread thread;
+    private static final Logger log = Logger.getLogger(BotInitializer.class.getName());
 
+    @Override
     public void contextInitialized(ServletContextEvent sce) {
-        System.out.println("=== Инициализация бота ===");
-
+        log.info("Registering Telegram bot...");
         try {
             TelegramBotsApi telegramBotsApi = new TelegramBotsApi(DefaultBotSession.class);
             telegramBotsApi.registerBot(RestaurantBot.getInstance());
-
-            thread = Thread.currentThread();
-            System.out.println("=== Бот успешно зарегистрирован ===");
-
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("Остановка бота — прерываем LongPolling...");
-                if (thread != null && thread.isAlive()) {
-                    thread.interrupt();
-                }
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ignored) {}
-                System.out.println("Бот остановлен чисто.");
-            }));
-
-
+            log.info("Telegram bot registered successfully.");
         } catch (TelegramApiException e) {
+            log.log(Level.SEVERE, "Failed to register Telegram bot", e);
             throw new RuntimeException(e);
         }
-
     }
 
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
-        System.out.println("Tomcat останавливается — бот будет выключен через shutdown hook.");    }
+        log.info("Servlet container stopping — Telegram long-polling session will close with the JVM.");
+    }
 }

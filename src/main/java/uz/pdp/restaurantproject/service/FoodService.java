@@ -1,7 +1,5 @@
 package uz.pdp.restaurantproject.service;
 
-import jakarta.persistence.EntityManager;
-import uz.pdp.restaurantproject.config.JPAConfig;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.mapper.FoodMapper;
 import uz.pdp.restaurantproject.model.Food;
@@ -15,47 +13,33 @@ import uz.pdp.restaurantproject.validator.FoodValidator;
 
 import java.util.List;
 
-public class FoodService extends AbstractService<FoodRepository, FoodMapper, FoodValidator> {
+public final class FoodService extends AbstractService<FoodRepository, FoodMapper, FoodValidator> {
+    private static final FoodService INSTANCE = new FoodService();
 
-    private static FoodService instance;
-
-    public FoodService() {
+    private FoodService() {
         super(FoodRepositoryImpl.getInstance(), FoodMapper.getInstance(), FoodValidator.getInstance());
     }
 
     public static FoodService getInstance() {
-        if (instance == null) {
-            instance = new FoodService();
-        }
-
-        return instance;
+        return INSTANCE;
     }
 
     public DataDto<List<FoodDto>> getAll(BaseCriteria criteria) {
         DataDto<List<Food>> page = repository.findAll(criteria);
-        List<FoodDto> foodList = mapper.toDto(page.getData());
-        return new DataDto<>(foodList, 0);
+        return new DataDto<>(mapper.toDto(page.getData()), page.getTotalPages());
     }
 
     public List<FoodDto> getAll() {
-        List<Food> foods = repository.findAll();
-
-        return mapper.toDto(foods);
+        return mapper.toDto(repository.findAll());
     }
 
     public void delete(String id) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-        entityManager.getTransaction().begin();
-        Food food = entityManager.find(Food.class, id);
-        food.setDeleted(true);
-        entityManager.merge(food);
-        entityManager.getTransaction().commit();
-        entityManager.close();
+        Food food = validator.existsAndGet(id);
+        repository.delete(food);
     }
 
     public void create(FoodCreateDto dto) {
-        Food food = mapper.fromDto(dto);
-        repository.save(food);
+        repository.save(mapper.fromDto(dto));
     }
 
     public void update(FoodUpdateDto dto, String id) {
@@ -65,7 +49,6 @@ public class FoodService extends AbstractService<FoodRepository, FoodMapper, Foo
     }
 
     public FoodDto get(String foodId) {
-        Food food = validator.existsAndGet(foodId);
-        return mapper.toDto(food);
+        return mapper.toDto(validator.existsAndGet(foodId));
     }
 }

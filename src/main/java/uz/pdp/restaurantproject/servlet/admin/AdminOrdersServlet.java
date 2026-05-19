@@ -10,7 +10,7 @@ import uz.pdp.restaurantproject.service.OrderService;
 
 import java.io.IOException;
 import java.util.List;
-
+import java.util.Map;
 
 @WebServlet("/admin/orders")
 public class AdminOrdersServlet extends HttpServlet {
@@ -18,13 +18,9 @@ public class AdminOrdersServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        List<Order> activeOrders = orderService.getActiveOrders();
-        List<Order> orderHistory = orderService.getHistoryOrders();
-
-        System.out.println("orders " + activeOrders);
-        req.setAttribute("orders", activeOrders);
-        req.setAttribute("orderHistory", orderHistory);
-
+        Map<Boolean, List<Order>> partitioned = orderService.partitionActiveAndHistory();
+        req.setAttribute("orders", partitioned.get(Boolean.TRUE));
+        req.setAttribute("orderHistory", partitioned.get(Boolean.FALSE));
         req.getRequestDispatcher("/WEB-INF/admin/orders.jsp").forward(req, resp);
     }
 }

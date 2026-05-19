@@ -1,6 +1,5 @@
 package uz.pdp.restaurantproject.mapper;
 
-
 import uz.pdp.restaurantproject.model.Food;
 import uz.pdp.restaurantproject.model.dto.FoodCreateDto;
 import uz.pdp.restaurantproject.model.dto.FoodDto;
@@ -9,23 +8,19 @@ import uz.pdp.restaurantproject.service.FileService;
 
 import java.util.List;
 
-public class FoodMapper {
+public final class FoodMapper {
+    private static final FoodMapper INSTANCE = new FoodMapper();
 
-    private static FoodMapper instance;
     private final FileService fileService = FileService.getInstance();
 
+    private FoodMapper() {}
+
     public static FoodMapper getInstance() {
-        if (instance == null) {
-            instance = new FoodMapper();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     public List<FoodDto> toDto(List<Food> foods) {
-        return foods
-                .stream()
-                .map(this::toDto)
-                .toList();
+        return foods.stream().map(this::toDto).toList();
     }
 
     public FoodDto toDto(Food food) {
@@ -42,30 +37,24 @@ public class FoodMapper {
 
     public void fromDto(FoodUpdateDto dto, Food food) {
         if (dto.getImage() != null) {
-            String url = fileService.upload(dto.getImage());
-            food.setImage(url);
+            food.setImage(fileService.upload(dto.getImage()));
         }
-
         food.setName(dto.getName());
         food.setDescription(dto.getDescription());
         food.setPrice(dto.getPrice());
         food.setActive(dto.getActive());
         food.setTotalAmount(dto.getTotalAmount());
-
     }
 
     public Food fromDto(FoodCreateDto dto) {
-        String url = fileService.upload(dto.getImage());
-        System.out.println("url: " + url);
         Food food = new Food();
         food.setName(dto.getName());
         food.setDescription(dto.getDescription());
         food.setPrice(dto.getPrice());
         food.setActive(dto.getActive());
         food.setTotalAmount(dto.getTotalAmount());
-        food.setImage(url);
+        food.setImage(fileService.upload(dto.getImage()));
         food.setDeleted(false);
         return food;
-
     }
 }
