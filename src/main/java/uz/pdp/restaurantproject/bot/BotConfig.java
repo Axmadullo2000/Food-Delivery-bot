@@ -1,8 +1,12 @@
 package uz.pdp.restaurantproject.bot;
 
+import io.github.cdimascio.dotenv.Dotenv;
+
+import java.util.logging.Logger;
+
 /**
- * Telegram bot configuration sourced from environment variables (or JVM system
- * properties as a fallback so values can also be passed via {@code -DTELEGRAM_BOT_TOKEN=...}).
+ * Telegram bot configuration sourced from .env file, environment variables,
+ * or JVM system properties (in that order of priority).
  *
  * <p>Required:</p>
  * <ul>
@@ -15,10 +19,42 @@ package uz.pdp.restaurantproject.bot;
  * later.</p>
  */
 public final class BotConfig {
+    private static final Logger log = Logger.getLogger(BotConfig.class.getName());
+
     private static final String TOKEN_ENV = "TELEGRAM_BOT_TOKEN";
     private static final String USERNAME_ENV = "TELEGRAM_BOT_USERNAME";
 
+    // Load dotenv FIRST, before creating INSTANCE
+    private static final Dotenv dotenv = loadDotenv();
     private static final BotConfig INSTANCE = new BotConfig();
+
+    private static Dotenv loadDotenv() {
+        // Try multiple directories where .env might be located
+        String[] directories = {
+            ".",                                                          // Current directory
+            System.getProperty("catalina.base", ".") + "/bin",           // Tomcat bin
+            System.getProperty("catalina.home", ".") + "/bin",           // Tomcat home bin
+            System.getProperty("user.dir"),                              // User working directory
+        };
+
+        for (String dir : directories) {
+            try {
+                Dotenv env = Dotenv.configure()
+                        .directory(dir)
+                        .ignoreIfMissing()
+                        .load();
+                // Check if the file actually has our variables
+                if (env.get("TELEGRAM_BOT_TOKEN") != null) {
+                    log.info(".env file loaded from: " + dir);
+                    return env;
+                }
+            } catch (Exception e) {
+                log.fine("Could not load .env from " + dir + ": " + e.getMessage());
+            }
+        }
+        log.warning(".env file not found in any expected location");
+        return null;
+    }
 
     private final String token;
     private final String username;
@@ -41,15 +77,31 @@ public final class BotConfig {
     }
 
     private static String require(String name) {
+        // 1. Try .env file first
+        if (dotenv != null) {
+            String value = dotenv.get(name);
+            if (value != null && !value.isBlank()) {
+                log.info("Loaded " + name + " from .env file");
+                return value;
+            }
+        }
+
+        // 2. Try system environment variable
         String value = System.getenv(name);
-        if (value == null || value.isBlank()) {
-            value = System.getProperty(name);
+        if (value != null && !value.isBlank()) {
+            log.info("Loaded " + name + " from system environment");
+            return value;
         }
-        if (value == null || value.isBlank()) {
-            throw new IllegalStateException(
-                    "Environment variable " + name + " is not set. " +
-                            "Configure it before starting the application.");
+
+        // 3. Try JVM system property (-D flag)
+        value = System.getProperty(name);
+        if (value != null && !value.isBlank()) {
+            log.info("Loaded " + name + " from JVM system property");
+            return value;
         }
-        return value;
+
+        throw new IllegalStateException(
+                "Variable " + name + " is not set. " +
+                "Configure it in .env file, environment variable, or JVM property (-D" + name + "=...)");
     }
 }
