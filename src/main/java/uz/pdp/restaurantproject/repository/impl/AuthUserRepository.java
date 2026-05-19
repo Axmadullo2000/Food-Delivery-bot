@@ -1,6 +1,7 @@
 package uz.pdp.restaurantproject.repository.impl;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.TypedQuery;
 import uz.pdp.restaurantproject.config.JPAConfig;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
@@ -11,25 +12,21 @@ import uz.pdp.restaurantproject.repository.CrudRepository;
 import java.util.List;
 import java.util.Optional;
 
-public class AuthUserRepository implements CrudRepository<AuthUser, String> {
+public final class AuthUserRepository implements CrudRepository<AuthUser, String> {
 
-    private static AuthUserRepository instance;
+    private static final AuthUserRepository INSTANCE = new AuthUserRepository();
 
     private AuthUserRepository() {}
 
     public static AuthUserRepository getInstance() {
-        if (instance == null) {
-            instance = new AuthUserRepository();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     @Override
     public Optional<AuthUser> findById(String id) {
         EntityManager em = JPAConfig.getEntityManager();
         try {
-            AuthUser user = em.find(AuthUser.class, id);
-            return Optional.ofNullable(user);
+            return Optional.ofNullable(em.find(AuthUser.class, id));
         } finally {
             em.close();
         }
@@ -38,17 +35,18 @@ public class AuthUserRepository implements CrudRepository<AuthUser, String> {
     @Override
     public AuthUser save(AuthUser authUser) {
         EntityManager em = JPAConfig.getEntityManager();
+        EntityTransaction tx = em.getTransaction();
         try {
-            em.getTransaction().begin();
-            if (authUser.getId() == null) {
-                em.persist(authUser);
-            } else {
+            tx.begin();
+            if (authUser.getId() != null && em.find(AuthUser.class, authUser.getId()) != null) {
                 authUser = em.merge(authUser);
+            } else {
+                em.persist(authUser);
             }
-            em.getTransaction().commit();
+            tx.commit();
             return authUser;
-        } catch (Exception e) {
-            em.getTransaction().rollback();
+        } catch (RuntimeException e) {
+            if (tx.isActive()) tx.rollback();
             throw e;
         } finally {
             em.close();
@@ -58,13 +56,14 @@ public class AuthUserRepository implements CrudRepository<AuthUser, String> {
     @Override
     public void delete(AuthUser authUser) {
         EntityManager em = JPAConfig.getEntityManager();
+        EntityTransaction tx = em.getTransaction();
         try {
-            em.getTransaction().begin();
+            tx.begin();
             AuthUser managedUser = em.contains(authUser) ? authUser : em.merge(authUser);
             em.remove(managedUser);
-            em.getTransaction().commit();
-        } catch (Exception e) {
-            em.getTransaction().rollback();
+            tx.commit();
+        } catch (RuntimeException e) {
+            if (tx.isActive()) tx.rollback();
             throw e;
         } finally {
             em.close();
@@ -75,31 +74,34 @@ public class AuthUserRepository implements CrudRepository<AuthUser, String> {
     public DataDto<List<AuthUser>> findAll(BaseCriteria criteria) {
         EntityManager em = JPAConfig.getEntityManager();
         try {
-            String baseQuery = "SELECT a FROM AuthUser a";
-            String countQueryStr = "SELECT COUNT(a) FROM AuthUser a";
+            boolean hasSearch = criteria != null
+                    && criteria.getSearch() != null
+                    && !criteria.getSearch().isBlank();
 
-            if (criteria.getSearch() != null && !criteria.getSearch().isBlank()) {
-                baseQuery += " WHERE LOWER(a.name) LIKE :search OR LOWER(a.username) LIKE :search";
-                countQueryStr += " WHERE LOWER(a.name) LIKE :search OR LOWER(a.username) LIKE :search";
-            }
+            String where = hasSearch
+                    ? " WHERE LOWER(a.name) LIKE :search OR LOWER(a.username) LIKE :search"
+                    : "";
 
-            TypedQuery<AuthUser> query = em.createQuery(baseQuery, AuthUser.class);
-            TypedQuery<Long> countQuery = em.createQuery(countQueryStr, Long.class);
+            TypedQuery<AuthUser> query = em.createQuery("SELECT a FROM AuthUser a" + where, AuthUser.class);
+            TypedQuery<Long> countQuery = em.createQuery("SELECT COUNT(a) FROM AuthUser a" + where, Long.class);
 
-            if (criteria.getSearch() != null && !criteria.getSearch().isBlank()) {
+            if (hasSearch) {
                 String searchPattern = "%" + criteria.getSearch().toLowerCase() + "%";
                 query.setParameter("search", searchPattern);
                 countQuery.setParameter("search", searchPattern);
             }
 
-            // Пагинация
-            query.setFirstResult(criteria.getPage() * criteria.getSize());
-            query.setMaxResults(criteria.getSize());
+            int page = criteria != null && criteria.getPage() != null ? criteria.getPage() : 0;
+            int size = criteria != null && criteria.getSize() != null && criteria.getSize() > 0
+                    ? criteria.getSize() : 20;
+            query.setFirstResult(page * size);
+            query.setMaxResults(size);
 
             List<AuthUser> users = query.getResultList();
-            Long total = countQuery.getSingleResult();
+            long total = countQuery.getSingleResult();
+            int totalPages = (int) ((total + size - 1) / size);
 
-            return new DataDto<>(users, total.intValue());
+            return new DataDto<>(users, totalPages);
         } finally {
             em.close();
         }
@@ -109,8 +111,7 @@ public class AuthUserRepository implements CrudRepository<AuthUser, String> {
     public List<AuthUser> findAll() {
         EntityManager em = JPAConfig.getEntityManager();
         try {
-            TypedQuery<AuthUser> query = em.createQuery("SELECT a FROM AuthUser a", AuthUser.class);
-            return query.getResultList();
+            return em.createQuery("SELECT a FROM AuthUser a", AuthUser.class).getResultList();
         } finally {
             em.close();
         }

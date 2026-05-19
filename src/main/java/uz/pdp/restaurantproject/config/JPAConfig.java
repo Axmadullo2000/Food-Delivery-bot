@@ -4,15 +4,18 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
 
-public class JPAConfig {
-    private static EntityManagerFactory entityManagerFactory;
+public final class JPAConfig {
+    private static final String PERSISTENCE_UNIT = "restaurant_unit";
 
-    public static EntityManager getEntityManager() {
-        if (entityManagerFactory == null) {
-            entityManagerFactory = Persistence.createEntityManagerFactory("restaurant_unit");
-        }
+    private JPAConfig() {}
 
-        return entityManagerFactory.createEntityManager();
+    /** Holder idiom: the factory is created exactly once, lazily and thread-safely. */
+    private static final class Holder {
+        private static final EntityManagerFactory FACTORY =
+                Persistence.createEntityManagerFactory(PERSISTENCE_UNIT);
     }
 
+    public static EntityManager getEntityManager() {
+        return Holder.FACTORY.createEntityManager();
+    }
 }

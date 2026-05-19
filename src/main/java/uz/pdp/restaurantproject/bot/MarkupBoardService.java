@@ -11,173 +11,103 @@ import uz.pdp.restaurantproject.model.dto.FoodDto;
 import java.util.ArrayList;
 import java.util.List;
 
-public class MarkupBoardService {
-    private static MarkupBoardService instance;
+public final class MarkupBoardService {
+    private static final int MAIN_MENU_COLUMNS = 2;
+
+    private static final MarkupBoardService INSTANCE = new MarkupBoardService();
+
+    private MarkupBoardService() {}
 
     public static MarkupBoardService getInstance() {
-        if (instance == null) {
-            instance = new MarkupBoardService();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     public ReplyKeyboard mainMenu() {
-        List<String> buttonTexts = List.of(
+        return prepareReplyKeyboard(List.of(
                 Constants.ICON_MENU,
                 Constants.MY_ORDERS,
                 Constants.CART
-        );
-
-
-        return prepareReplyKeyboard(buttonTexts);
+        ));
     }
 
     private ReplyKeyboardMarkup prepareReplyKeyboard(List<String> buttonTexts) {
         List<KeyboardRow> keyboard = new ArrayList<>();
-
         KeyboardRow row = new KeyboardRow();
-
-        for (int i = 0; i < buttonTexts.size(); i++) {
-            row.add(buttonTexts.get(i));
-            if ((i + 1) % 2 == 0 || i + 1 == buttonTexts.size()) {
+        for (String text : buttonTexts) {
+            row.add(text);
+            if (row.size() == MAIN_MENU_COLUMNS) {
                 keyboard.add(row);
                 row = new KeyboardRow();
             }
         }
+        if (!row.isEmpty()) {
+            keyboard.add(row);
+        }
 
-        ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
-        replyKeyboardMarkup.setKeyboard(keyboard);
-        replyKeyboardMarkup.setResizeKeyboard(true);
-        replyKeyboardMarkup.setSelective(true);
-        return replyKeyboardMarkup;
+        ReplyKeyboardMarkup markup = new ReplyKeyboardMarkup();
+        markup.setKeyboard(keyboard);
+        markup.setResizeKeyboard(true);
+        markup.setSelective(true);
+        return markup;
     }
 
     public ReplyKeyboard foods(List<FoodDto> foods) {
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
-
-        foods.forEach(food -> {
-            List<InlineKeyboardButton> row = new ArrayList<>();
-            InlineKeyboardButton button = new InlineKeyboardButton();
-            button.setText(food.getName());
-            button.setCallbackData("food:" + food.getId());
-            row.add(button);
-            keyboard.add(row);
-        });
-
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(keyboard);
-        return markup;
-
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>(foods.size());
+        for (FoodDto food : foods) {
+            keyboard.add(List.of(InlineKeyboardButton.builder()
+                    .text(food.getName())
+                    .callbackData(Constants.FOOD + food.getId())
+                    .build()));
+        }
+        return InlineKeyboardMarkup.builder().keyboard(keyboard).build();
     }
 
     public ReplyKeyboard foodButton(FoodDto food) {
-        List<InlineKeyboardButton> row = new ArrayList<>();
-        InlineKeyboardButton button = new InlineKeyboardButton();
-        button.setText(Constants.ADD_TO_CART);
-        button.setCallbackData(Constants.ADD_FOOD_TO_CART + food.getId());
-        row.add(button);
-
-        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        markup.setKeyboard(List.of(row));
-
-        return markup;
+        InlineKeyboardButton add = InlineKeyboardButton.builder()
+                .text(Constants.ADD_TO_CART)
+                .callbackData(Constants.ADD_FOOD_TO_CART + food.getId())
+                .build();
+        return InlineKeyboardMarkup.builder()
+                .keyboard(List.of(List.of(add)))
+                .build();
     }
 
-    public ReplyKeyboard cartKeyboard(List<OrderItem> items) {
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-
+    public InlineKeyboardMarkup cartKeyboard(List<OrderItem> items) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>(items.size() + 1);
         for (OrderItem item : items) {
             String foodId = item.getFood().getId();
             int qty = item.getQuantity();
 
             InlineKeyboardButton minus = InlineKeyboardButton.builder()
                     .text(qty == 1 ? "Delete" : "-")
-                    .callbackData(qty == 1 ? "remove:" + foodId : "dec:" + foodId)  // убрать пробелы!
+                    .callbackData(qty == 1 ? Constants.REMOVE_FROM_CART + foodId
+                                           : Constants.DECREMENT + foodId)
                     .build();
 
             InlineKeyboardButton count = InlineKeyboardButton.builder()
                     .text(qty + " × " + item.getFood().getName())
-                    .callbackData("ignore")
+                    .callbackData(Constants.NOOP)
                     .build();
 
             InlineKeyboardButton plus = InlineKeyboardButton.builder()
                     .text("+")
-                    .callbackData("inc:" + foodId)
+                    .callbackData(Constants.INCREMENT + foodId)
                     .build();
 
             rows.add(List.of(minus, count, plus));
         }
 
-        List<InlineKeyboardButton> bottom  = new ArrayList<>();
-
-        bottom.add(InlineKeyboardButton.builder()
+        rows.add(List.of(
+                InlineKeyboardButton.builder()
                         .text("Clear")
-                        .callbackData("clear_cart")
-                .build());
+                        .callbackData(Constants.CLEAR_CART)
+                        .build(),
+                InlineKeyboardButton.builder()
+                        .text("Proceed to Payment")
+                        .callbackData(Constants.CHECKOUT)
+                        .build()
+        ));
 
-        bottom.add(InlineKeyboardButton.builder()
-                .text("Proceed to Payment")
-                .callbackData("checkout")
-                .build());
-        rows.add(bottom);
-
-        return InlineKeyboardMarkup.builder()
-                .keyboard(rows)
-                .build();
-    }
-
-    public InlineKeyboardMarkup cartInlineKeyboard(List<OrderItem> items) {
-        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
-
-        // Кнопки для каждого товара (-, количество, +)
-        for (OrderItem item : items) {
-            List<InlineKeyboardButton> row = new ArrayList<>();
-
-            // Кнопка уменьшения
-            InlineKeyboardButton decreaseBtn = InlineKeyboardButton.builder()
-                    .text("➖")
-                    .callbackData("dec:" + item.getFood().getId())
-                    .build();
-
-            // Показываем текущее количество
-            InlineKeyboardButton quantityBtn = InlineKeyboardButton.builder()
-                    .text(item.getFood().getName() + " (" + item.getQuantity() + ")")
-                    .callbackData("info:" + item.getFood().getId())
-                    .build();
-
-            // Кнопка увеличения
-            InlineKeyboardButton increaseBtn = InlineKeyboardButton.builder()
-                    .text("➕")
-                    .callbackData("inc:" + item.getFood().getId())
-                    .build();
-
-            row.add(decreaseBtn);
-            row.add(quantityBtn);
-            row.add(increaseBtn);
-
-            keyboard.add(row);
-        }
-
-        // Нижний ряд с кнопками "Очистить корзину" и "Оформить заказ"
-        List<InlineKeyboardButton> bottomRow = new ArrayList<>();
-
-        InlineKeyboardButton clearBtn = InlineKeyboardButton.builder()
-                .text("🗑 Очистить корзину")
-                .callbackData("clear_cart")
-                .build();
-
-        InlineKeyboardButton checkoutBtn = InlineKeyboardButton.builder()
-                .text("✅ Оформить заказ")
-                .callbackData("checkout")
-                .build();
-
-        bottomRow.add(clearBtn);
-        bottomRow.add(checkoutBtn);
-
-        keyboard.add(bottomRow);
-
-        return InlineKeyboardMarkup.builder()
-                .keyboard(keyboard)
-                .build();
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 }
