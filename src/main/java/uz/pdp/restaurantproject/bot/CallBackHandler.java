@@ -4,14 +4,19 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import uz.pdp.restaurantproject.model.Order;
 import uz.pdp.restaurantproject.model.OrderItem;
 import uz.pdp.restaurantproject.service.OrderService;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 public class CallBackHandler {
+    private static final Logger log = Logger.getLogger(CallBackHandler.class.getName());
+
     private final TelegramService service = TelegramService.getInstance();
     private final MarkupBoardService markupBoardService = MarkupBoardService.getInstance();
+    private final OrderService orderService = OrderService.getInstance();
 
     public void handle(CallbackQuery callbackQuery) {
         String chatId = callbackQuery.getMessage().getChatId().toString();
@@ -21,111 +26,107 @@ public class CallBackHandler {
         if (data == null) return;
 
         try {
-            if (data.startsWith("food:")) {
-                service.sendFoodInfo(data, chatId);
-            } else if (data.startsWith(Constants.ADD_FOOD_TO_CART)) {
-                String foodId = data.replace(Constants.ADD_FOOD_TO_CART, "");
-                service.addFoodToCart(data, chatId, callbackQuery.getFrom().getUserName());
-                service.sendCart(chatId);
-            } else if (data.startsWith("inc:")) {
-                String foodId = data.substring(4);
-                OrderService.getInstance().increaseQuantity(foodId, chatId);
-                updateCartMessage(chatId, messageId);
-            } else if (data.startsWith("dec:")) {
-                String foodId = data.substring(4);
-                OrderService.getInstance().decreaseQuantity(foodId, chatId);
-                updateCartMessage(chatId, messageId);
-            } else if ("clear_cart".equals(data)) {
-                Order cart = OrderService.getInstance().getCart(chatId);
-
-                if (cart != null) {
-                    cart.getItems().clear();
-                    OrderService.getInstance().save(cart);
-                }
-
-                updateCartMessage(chatId, messageId);
-            } else if ("checkout".equals(data)) {
-                // ИСПРАВЛЕНО: передаём chatId, а не orderId
-                OrderService.getInstance().checkout(chatId);
-
-                // Удаляем сообщение с корзиной
-                DeleteMessage delete = DeleteMessage.builder()
-                        .chatId(chatId)
-                        .messageId(messageId)
-                        .build();
-                RestaurantBot.getInstance().execute(delete);
-
-                // Отправляем подтверждение
-                SendMessage sm = SendMessage.builder()
-                        .chatId(chatId)
-                        .text("✅ Your order has been successfully placed!\n\n" +
-                                "We will notify you about the status updates.")
-                        .replyMarkup(markupBoardService.mainMenu())
-                        .build();
-                RestaurantBot.getInstance().sendMessage(sm);
-            } else if ("my_orders".equals(data)) {
-                service.sendMyOrders(chatId);
-            }
+            dispatch(callbackQuery, chatId, messageId, data);
         } catch (Exception e) {
-            System.err.println("Error in CallBackHandler: " + e.getMessage());
-            e.printStackTrace();
-
-            // Отправляем сообщение об ошибке пользователю
-            try {
-                SendMessage errorMsg = SendMessage.builder()
-                        .chatId(chatId)
-                        .text("⚠️ An error occurred. Please try again.")
-                        .build();
-                RestaurantBot.getInstance().sendMessage(errorMsg);
-            } catch (Exception ignored) {}
+            log.log(Level.SEVERE, "Error in CallBackHandler", e);
+            sendError(chatId);
         }
     }
 
-    private void updateCartMessage(String chatId, Integer messageId) throws TelegramApiException {
-        Order cart = OrderService.getInstance().getCart(chatId);
+    private void dispatch(CallbackQuery callbackQuery, String chatId, Integer messageId, String data) {
+        String foodId;
+        if ((foodId = Constants.stripPrefix(data, Constants.FOOD)) != null) {
+            service.sendFoodInfo(foodId, chatId);
+        } else if ((foodId = Constants.stripPrefix(data, Constants.ADD_FOOD_TO_CART)) != null) {
+            service.addFoodToCart(foodId, chatId, callbackQuery.getFrom().getUserName());
+            service.sendCart(chatId);
+        } else if ((foodId = Constants.stripPrefix(data, Constants.INCREMENT)) != null) {
+            orderService.increaseQuantity(foodId, chatId);
+            updateCartMessage(chatId, messageId);
+        } else if ((foodId = Constants.stripPrefix(data, Constants.DECREMENT)) != null) {
+            orderService.decreaseQuantity(foodId, chatId);
+            updateCartMessage(chatId, messageId);
+        } else if ((foodId = Constants.stripPrefix(data, Constants.REMOVE_FROM_CART)) != null) {
+            orderService.removeFromCart(foodId, chatId);
+            updateCartMessage(chatId, messageId);
+        } else if (Constants.CLEAR_CART.equals(data)) {
+            orderService.clearCart(chatId);
+            updateCartMessage(chatId, messageId);
+        } else if (Constants.CHECKOUT.equals(data)) {
+            orderService.checkout(chatId);
+            deleteMessage(chatId, messageId);
+            sendCheckoutConfirmation(chatId);
+        } else if (Constants.MY_ORDERS_ACTION.equals(data)) {
+            service.sendMyOrders(chatId);
+        }
+    }
+
+    private void deleteMessage(String chatId, Integer messageId) {
+        RestaurantBot.getInstance().executeSafe(DeleteMessage.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .build());
+    }
+
+    private void sendCheckoutConfirmation(String chatId) {
+        SendMessage sm = SendMessage.builder()
+                .chatId(chatId)
+                .text("""
+                        ✅ Your order has been successfully placed!
+
+                        We will notify you about the status updates.""")
+                .replyMarkup(markupBoardService.mainMenu())
+                .build();
+        RestaurantBot.getInstance().sendMessage(sm);
+    }
+
+    private void sendError(String chatId) {
+        try {
+            SendMessage errorMsg = SendMessage.builder()
+                    .chatId(chatId)
+                    .text("⚠️ An error occurred. Please try again.")
+                    .build();
+            RestaurantBot.getInstance().sendMessage(errorMsg);
+        } catch (Exception ignored) {
+            // Best-effort.
+        }
+    }
+
+    private void updateCartMessage(String chatId, Integer messageId) {
+        Order cart = orderService.getCart(chatId);
 
         if (cart == null || cart.getItems().isEmpty()) {
-            // Удаляем сообщение с корзиной
-            DeleteMessage delete = DeleteMessage.builder()
+            deleteMessage(chatId, messageId);
+            RestaurantBot.getInstance().sendMessage(SendMessage.builder()
                     .chatId(chatId)
-                    .messageId(messageId)
-                    .build();
-            RestaurantBot.getInstance().execute(delete);
+                    .text("""
+                            🛒 Cart is empty
 
-            // Отправляем новое сообщение с обычным меню
-            SendMessage newMsg = SendMessage.builder()
-                    .chatId(chatId)
-                    .text("🛒 Cart is empty\n\nWhat would you like to order?")
+                            What would you like to order?""")
                     .replyMarkup(markupBoardService.mainMenu())
-                    .build();
-            RestaurantBot.getInstance().sendMessage(newMsg);
-
+                    .build());
             return;
         }
 
-        // Если корзина не пустая — редактируем сообщение
         StringBuilder text = new StringBuilder("🛒 *Your Cart:*\n\n");
         double total = 0;
-
         for (OrderItem item : cart.getItems()) {
             double linePrice = item.getPrice() * item.getQuantity();
             total += linePrice;
-            text.append(String.format("%d × %s — %.0f sum\n",
+            text.append(String.format("%d × %s — %.0f sum%n",
                     item.getQuantity(),
                     item.getFood().getName(),
                     linePrice));
         }
-
-        text.append(String.format("\n*Total: %.0f sum*", total));
+        text.append(String.format("%n*Total: %.0f sum*", total));
 
         EditMessageText edit = EditMessageText.builder()
                 .chatId(chatId)
                 .messageId(messageId)
                 .text(text.toString())
                 .parseMode("Markdown")
-                .replyMarkup(markupBoardService.cartInlineKeyboard(cart.getItems()))
+                .replyMarkup(markupBoardService.cartKeyboard(cart.getItems()))
                 .build();
-
         RestaurantBot.getInstance().editMessage(edit);
     }
 }

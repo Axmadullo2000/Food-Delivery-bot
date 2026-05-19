@@ -6,142 +6,86 @@ import uz.pdp.restaurantproject.model.Order;
 import uz.pdp.restaurantproject.model.OrderItem;
 import uz.pdp.restaurantproject.model.enums.OrderStatus;
 
-public class OrderNotificationService {
-    private static OrderNotificationService instance;
+public final class OrderNotificationService {
+    private static final OrderNotificationService INSTANCE = new OrderNotificationService();
 
     private OrderNotificationService() {}
 
     public static OrderNotificationService getInstance() {
-        if (instance == null) {
-            instance = new OrderNotificationService();
-        }
-        return instance;
+        return INSTANCE;
     }
 
-    /**
-     * Отправляет уведомление клиенту об изменении статуса заказа
-     */
+    /** Sends a status-change notification to the client. */
     public void notifyStatusChange(Order order, OrderStatus newStatus) {
-        String chatId = order.getClient().getChatId();
-
-        System.out.println("Chat id: " + chatId);
-
-        String message = buildNotificationMessage(order, newStatus);
-
-
-        System.out.println("Message: " + message);
-
-        SendMessage sendMessage = SendMessage.builder()
-                .chatId(chatId)
-                .text(message)
-                .parseMode("Markdown")
-                .build();
-
-        RestaurantBot.getInstance().sendMessage(sendMessage);
+        send(order.getClient().getChatId(), buildNotificationMessage(order, newStatus));
     }
 
-    /**
-     * Формирует текст уведомления в зависимости от статуса
-     */
-    private String buildNotificationMessage(Order order, OrderStatus status) {
+    /** Sends a confirmation message right after checkout. */
+    public void notifyOrderCreated(Order order) {
+        StringBuilder message = new StringBuilder()
+                .append("✨ *Заказ успешно оформлен!*\n\n")
+                .append("Ваш заказ принят и ожидает подтверждения.\n")
+                .append("Мы пришлём вам уведомление, как только заказ будет подтверждён.\n\n")
+                .append("*Детали заказа:*\n");
+        appendItemsAndTotal(message, order);
+        send(order.getClient().getChatId(), message.toString());
+    }
+
+    private static String buildNotificationMessage(Order order, OrderStatus status) {
         StringBuilder message = new StringBuilder();
         String orderNumber = order.getId() != null ? "#" + order.getId() : "";
 
-        System.out.println("Order number: " + orderNumber);
-
         switch (status) {
-            case CONFIRMED -> {
-                message.append("✅ *Заказ подтвержден!* ").append(orderNumber).append("\n\n");
-                message.append("Ваш заказ принят и передан на кухню.\n");
-                message.append("Ожидайте следующее уведомление о начале приготовления.");
-            }
-
-
-            case PREPARING -> {
-                System.out.println("Message * " + status.name());
-                message.append("👨‍🍳 *Заказ готовится!* ").append(orderNumber).append("\n\n");
-                message.append("Наши повара начали готовить ваш заказ.\n");
-                message.append("Скоро всё будет готово!");
-                System.out.println("Message * " + status.name() + " good!");
-            }
-            case IN_DELIVERY -> {
-                message.append("🚗 *Заказ в пути!* ").append(orderNumber).append("\n\n");
-                message.append("Курьер уже везёт ваш заказ.\n");
-                message.append("Ожидайте доставку в ближайшее время!");
-            }
-
-            case DELIVERED -> {
-                message.append("🎉 *Заказ доставлен!* ").append(orderNumber).append("\n\n");
-                message.append("Приятного аппетита! 🍽\n");
-                message.append("Спасибо, что выбрали Girgitton Express!\n\n");
-                message.append("Будем рады видеть вас снова!");
-            }
-
-            case CANCELED -> {
-                message.append("❌ *Заказ отменён* ").append(orderNumber).append("\n\n");
-                message.append("К сожалению, ваш заказ был отменён.\n");
-                message.append("Если у вас есть вопросы, свяжитесь с нами.");
-            }
+            case CONFIRMED -> message
+                    .append("✅ *Заказ подтвержден!* ").append(orderNumber).append("\n\n")
+                    .append("Ваш заказ принят и передан на кухню.\n")
+                    .append("Ожидайте следующее уведомление о начале приготовления.");
+            case PREPARING -> message
+                    .append("👨‍🍳 *Заказ готовится!* ").append(orderNumber).append("\n\n")
+                    .append("Наши повара начали готовить ваш заказ.\n")
+                    .append("Скоро всё будет готово!");
+            case IN_DELIVERY -> message
+                    .append("🚗 *Заказ в пути!* ").append(orderNumber).append("\n\n")
+                    .append("Курьер уже везёт ваш заказ.\n")
+                    .append("Ожидайте доставку в ближайшее время!");
+            case DELIVERED -> message
+                    .append("🎉 *Заказ доставлен!* ").append(orderNumber).append("\n\n")
+                    .append("Приятного аппетита! 🍽\n")
+                    .append("Спасибо, что выбрали Girgitton Express!\n\n")
+                    .append("Будем рады видеть вас снова!");
+            case CANCELED -> message
+                    .append("❌ *Заказ отменён* ").append(orderNumber).append("\n\n")
+                    .append("К сожалению, ваш заказ был отменён.\n")
+                    .append("Если у вас есть вопросы, свяжитесь с нами.");
+            default -> { /* CART / CREATED don't trigger notifications. */ }
         }
 
-        // Добавляем детали заказа
-        if (status != OrderStatus.CANCELED) {
+        if (status != OrderStatus.CANCELED && status != OrderStatus.CART) {
             message.append("\n\n*Состав заказа:*\n");
-            double total = 0;
-
-            for (OrderItem item : order.getItems()) {
-                double linePrice = item.getPrice() * item.getQuantity();
-                total += linePrice;
-                message.append("• ")
-                        .append(item.getQuantity())
-                        .append(" × ")
-                        .append(item.getFood().getName())
-                        .append(" — ")
-                        .append(String.format("%.0f", linePrice))
-                        .append(" sum\n");
-            }
-            System.out.println("Msg: " + message);
-
-            message.append("\n*Итого:* ").append(String.format("%.0f", total)).append(" sum");
+            appendItemsAndTotal(message, order);
         }
-
         return message.toString();
     }
 
-    /**
-     * Отправляет уведомление о создании заказа (после checkout)
-     */
-    public void notifyOrderCreated(Order order) {
-        String chatId = order.getClient().getChatId();
-
-        StringBuilder message = new StringBuilder();
-        message.append("✨ *Заказ успешно оформлен!*\n\n");
-        message.append("Ваш заказ принят и ожидает подтверждения.\n");
-        message.append("Мы пришлём вам уведомление, как только заказ будет подтверждён.\n\n");
-
-        message.append("*Детали заказа:*\n");
+    private static void appendItemsAndTotal(StringBuilder sb, Order order) {
         double total = 0;
-
         for (OrderItem item : order.getItems()) {
             double linePrice = item.getPrice() * item.getQuantity();
             total += linePrice;
-            message.append("• ")
-                    .append(item.getQuantity())
-                    .append(" × ")
-                    .append(item.getFood().getName())
-                    .append(" — ")
-                    .append(String.format("%.0f", linePrice))
-                    .append(" sum\n");
+            sb.append("• ")
+                    .append(item.getQuantity()).append(" × ")
+                    .append(item.getFood().getName()).append(" — ")
+                    .append(String.format("%.0f", linePrice)).append(" sum\n");
         }
+        sb.append("\n*Итого:* ").append(String.format("%.0f", total)).append(" sum");
+    }
 
-        message.append("\n*Итого:* ").append(String.format("%.0f", total)).append(" sum");
-
+    private static void send(String chatId, String text) {
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
-                .text(message.toString())
+                .text(text)
                 .parseMode("Markdown")
                 .build();
-
         RestaurantBot.getInstance().sendMessage(sendMessage);
     }
 }

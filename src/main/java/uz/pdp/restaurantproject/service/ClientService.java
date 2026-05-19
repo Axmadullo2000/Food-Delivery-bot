@@ -1,6 +1,5 @@
 package uz.pdp.restaurantproject.service;
 
-
 import uz.pdp.restaurantproject.model.Client;
 import uz.pdp.restaurantproject.model.dto.ClientCreateDto;
 import uz.pdp.restaurantproject.model.dto.ClientDto;
@@ -9,32 +8,21 @@ import uz.pdp.restaurantproject.repository.impl.ClientRepositoryImpl;
 
 import java.util.Optional;
 
-public class ClientService {
+public final class ClientService {
+    private static final ClientService INSTANCE = new ClientService();
 
     private final ClientRepository repository = ClientRepositoryImpl.getInstance();
 
-    private static ClientService instance;
+    private ClientService() {}
 
     public static ClientService getInstance() {
-        if (instance == null) {
-            instance = new ClientService();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     public ClientDto getByChatId(String chatId) {
-
-        Client client = repository.findByChatId(chatId).orElse(null);
-        if (client == null) {
-            return null;
-        }
-        return ClientDto.builder()
-                .fullName(client.getFullName())
-                .phone(client.getPhone())
-                .chatId(client.getChatId())
-                .latitude(client.getLatitude())
-                .longitude(client.getLongitude())
-                .build();
+        return repository.findByChatId(chatId)
+                .map(ClientService::toDto)
+                .orElse(null);
     }
 
     public ClientDto create(ClientCreateDto dto) {
@@ -42,8 +30,15 @@ public class ClientService {
         client.setFullName(dto.getFullName());
         client.setPhone(dto.getPhone());
         client.setChatId(dto.getChatId());
-        repository.save(client);
+        Client saved = repository.save(client);
+        return toDto(saved);
+    }
 
+    public Optional<Client> findByChatId(String chatId) {
+        return repository.findByChatId(chatId);
+    }
+
+    private static ClientDto toDto(Client client) {
         return ClientDto.builder()
                 .fullName(client.getFullName())
                 .phone(client.getPhone())
@@ -51,10 +46,5 @@ public class ClientService {
                 .latitude(client.getLatitude())
                 .longitude(client.getLongitude())
                 .build();
-    }
-
-    public Optional<Client> findByChatId(String chatId) {
-        Optional<Client> byChatId = repository.findByChatId(chatId);
-        return byChatId;
     }
 }

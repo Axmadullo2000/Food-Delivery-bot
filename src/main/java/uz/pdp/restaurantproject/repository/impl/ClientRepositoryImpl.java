@@ -8,77 +8,106 @@ import uz.pdp.restaurantproject.model.Client;
 import uz.pdp.restaurantproject.model.dto.DataDto;
 import uz.pdp.restaurantproject.repository.ClientRepository;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
-public class ClientRepositoryImpl implements ClientRepository {
+public final class ClientRepositoryImpl implements ClientRepository {
 
-    private static ClientRepositoryImpl instance;
+    private static final ClientRepositoryImpl INSTANCE = new ClientRepositoryImpl();
+
+    private ClientRepositoryImpl() {}
 
     public static ClientRepositoryImpl getInstance() {
-        if (instance == null) {
-            instance = new ClientRepositoryImpl();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     @Override
     public Optional<Client> findById(String id) {
-        return findByChatId(id);
+        EntityManager em = JPAConfig.getEntityManager();
+        try {
+            return Optional.ofNullable(em.find(Client.class, id));
+        } finally {
+            em.close();
+        }
     }
 
     @Override
     public Client save(Client client) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-        entityManager.getTransaction().begin();
-
-        if (findById(client.getId()).isPresent()) {
-            entityManager.merge(client);
-        }else {
-            entityManager.persist(client);
+        EntityManager em = JPAConfig.getEntityManager();
+        try {
+            em.getTransaction().begin();
+            Client managed;
+            if (client.getId() != null && em.find(Client.class, client.getId()) != null) {
+                managed = em.merge(client);
+            } else {
+                em.persist(client);
+                managed = client;
+            }
+            em.getTransaction().commit();
+            return managed;
+        } catch (RuntimeException e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw e;
+        } finally {
+            em.close();
         }
-        entityManager.getTransaction().commit();
-        entityManager.close();
-        return client;
     }
 
     @Override
     public void delete(Client client) {
-
+        // Soft-delete via flag, preserved for future use.
     }
 
     @Override
     public DataDto<List<Client>> findAll(BaseCriteria criteria) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-        List<Client> all = entityManager.createQuery("SELECT c FROM Client c WHERE c.fullName = :name", Client.class)
-                .setParameter("name", criteria)
-                .getResultList();
+        EntityManager em = JPAConfig.getEntityManager();
+        try {
+            String search = criteria == null || criteria.getSearch() == null
+                    ? ""
+                    : criteria.getSearch().toLowerCase().trim();
+            boolean hasSearch = !search.isEmpty();
 
-        return new DataDto<>(all, 0);
+            String jpql = "SELECT c FROM Client c WHERE c.deleted = false"
+                    + (hasSearch ? " AND LOWER(c.fullName) LIKE :search" : "");
+
+            TypedQuery<Client> query = em.createQuery(jpql, Client.class);
+            if (hasSearch) {
+                query.setParameter("search", "%" + search + "%");
+            }
+            return new DataDto<>(query.getResultList(), 0);
+        } finally {
+            em.close();
+        }
     }
 
     @Override
     public List<Client> findAll() {
-        return new ArrayList<>(findAll());
+        EntityManager em = JPAConfig.getEntityManager();
+        try {
+            return em.createQuery(
+                            "SELECT c FROM Client c WHERE c.deleted = false",
+                            Client.class)
+                    .getResultList();
+        } finally {
+            em.close();
+        }
     }
 
     @Override
     public Optional<Client> findByChatId(String chatId) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-        TypedQuery<Client> query = entityManager
-                .createQuery(
-                        "select c from Client c where not c.deleted and c.chatId = :chatId"
-                        , Client.class)
-                .setParameter("chatId", chatId);
-
-        List<Client> clients = query.getResultList();
-        entityManager.close();
-
-        if (clients.isEmpty()) {
-            return Optional.empty();
+        EntityManager em = JPAConfig.getEntityManager();
+        try {
+            List<Client> clients = em.createQuery(
+                            "SELECT c FROM Client c WHERE c.deleted = false AND c.chatId = :chatId",
+                            Client.class)
+                    .setParameter("chatId", chatId)
+                    .setMaxResults(1)
+                    .getResultList();
+            return clients.isEmpty() ? Optional.empty() : Optional.of(clients.get(0));
+        } finally {
+            em.close();
         }
-        return Optional.ofNullable(clients.get(0));
     }
 }

@@ -1,6 +1,9 @@
 package uz.pdp.restaurantproject.service;
 
-import uz.pdp.restaurantproject.model.*;
+import uz.pdp.restaurantproject.model.Client;
+import uz.pdp.restaurantproject.model.Food;
+import uz.pdp.restaurantproject.model.Order;
+import uz.pdp.restaurantproject.model.OrderItem;
 import uz.pdp.restaurantproject.model.enums.OrderStatus;
 import uz.pdp.restaurantproject.repository.ClientRepository;
 import uz.pdp.restaurantproject.repository.OrderRepository;
@@ -10,10 +13,21 @@ import uz.pdp.restaurantproject.validator.FoodValidator;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-public class OrderService {
-    private static OrderService instance;
+public final class OrderService {
+    private static final Set<OrderStatus> NOTIFIABLE_STATUSES = EnumSet.of(
+            OrderStatus.CONFIRMED, OrderStatus.PREPARING,
+            OrderStatus.IN_DELIVERY, OrderStatus.DELIVERED, OrderStatus.CANCELED);
+    private static final Set<OrderStatus> HISTORY_STATUSES = EnumSet.of(
+            OrderStatus.DELIVERED, OrderStatus.CANCELED);
+
+    private static final OrderService INSTANCE = new OrderService();
+
     private final OrderRepository repository = OrderRepositoryImpl.getInstance();
     private final FoodValidator foodValidator = FoodValidator.getInstance();
     private final ClientRepository clientRepository = ClientRepositoryImpl.getInstance();
@@ -22,39 +36,20 @@ public class OrderService {
     private OrderService() {}
 
     public static OrderService getInstance() {
-        if (instance == null) {
-            instance = new OrderService();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     public void addToCart(String foodId, String chatId) {
         Client client = clientRepository.findByChatId(chatId)
-                .orElseThrow(() -> new RuntimeException("Client not found"));
+                .orElseThrow(() -> new IllegalStateException("Client not found for chatId=" + chatId));
 
         Food food = foodValidator.existsAndGet(foodId);
+        Order cart = getOrCreateCart(client, chatId);
 
-        Order cart = getCart(chatId);
-
-        if (cart == null) {
-            cart = new Order();
-            cart.setClient(client);
-            cart.setStatus(OrderStatus.CART);
-            cart.setNumber(generateOrderNumber());
-            cart.setItems(new ArrayList<>());
-            cart.setCreatedAt(LocalDateTime.now());
-            cart.setCreatedBy(chatId);
-            cart = repository.save(cart);
-        }
-
-        OrderItem existingItem = cart.getItems().stream()
-                .filter(item -> item.getFood().getId().equals(food.getId()))
-                .findFirst().orElse(null);
-
+        OrderItem existingItem = findItem(cart, food.getId());
         if (existingItem != null) {
             existingItem.setQuantity(existingItem.getQuantity() + 1);
-            cart.setUpdatedBy(chatId);
-            cart.setUpdatedAt(LocalDateTime.now());
+            touch(cart, chatId);
             repository.updateOrderItem(existingItem);
         } else {
             OrderItem newItem = new OrderItem();
@@ -62,38 +57,83 @@ public class OrderService {
             newItem.setFood(food);
             newItem.setPrice(food.getPrice());
             newItem.setQuantity(1);
-
             cart.getItems().add(newItem);
             repository.createOrderItem(newItem);
         }
     }
 
+    private Order getOrCreateCart(Client client, String chatId) {
+        Order cart = repository.getCart(chatId);
+        if (cart != null) {
+            return cart;
+        }
+        Order fresh = new Order();
+        fresh.setClient(client);
+        fresh.setStatus(OrderStatus.CART);
+        fresh.setNumber(generateOrderNumber());
+        fresh.setItems(new ArrayList<>());
+        fresh.setCreatedAt(LocalDateTime.now());
+        fresh.setCreatedBy(chatId);
+        return repository.save(fresh);
+    }
+
+    private static OrderItem findItem(Order cart, String foodId) {
+        return cart.getItems().stream()
+                .filter(item -> item.getFood().getId().equals(foodId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static void touch(Order cart, String chatId) {
+        cart.setUpdatedBy(chatId);
+        cart.setUpdatedAt(LocalDateTime.now());
+    }
+
     public void increaseQuantity(String foodId, String chatId) {
-        changeQuantity(foodId, chatId, 1);
+        changeQuantity(foodId, chatId, +1);
     }
 
     public void decreaseQuantity(String foodId, String chatId) {
         changeQuantity(foodId, chatId, -1);
     }
 
-    private void changeQuantity(String foodId, String chatId, int helper) {
+    public void removeFromCart(String foodId, String chatId) {
         Order cart = repository.getCart(chatId);
+        if (cart == null) return;
+        OrderItem item = findItem(cart, foodId);
+        if (item != null) {
+            cart.getItems().remove(item);
+            repository.deleteOrderItem(item);
+        }
+    }
 
+    public void clearCart(String chatId) {
+        Order cart = repository.getCart(chatId);
+        if (cart == null || cart.getItems().isEmpty()) {
+            return;
+        }
+        // Iterate over a copy to avoid ConcurrentModificationException.
+        for (OrderItem item : new ArrayList<>(cart.getItems())) {
+            repository.deleteOrderItem(item);
+        }
+        cart.getItems().clear();
+    }
+
+    private void changeQuantity(String foodId, String chatId, int delta) {
+        Order cart = repository.getCart(chatId);
         if (cart == null) return;
 
-        cart.getItems().stream()
-                .filter(item -> item.getFood().getId().equals(foodId))
-                .findFirst()
-                .ifPresent(item -> {
-                    int newQty = item.getQuantity() + helper;
+        OrderItem item = findItem(cart, foodId);
+        if (item == null) return;
 
-                    if (newQty <= 0) {
-                        cart.getItems().remove(item);
-                    } else {
-                        item.setQuantity(newQty);
-                        repository.updateOrderItem(item);
-                    }
-                });
+        int newQty = item.getQuantity() + delta;
+        if (newQty <= 0) {
+            cart.getItems().remove(item);
+            repository.deleteOrderItem(item);
+        } else {
+            item.setQuantity(newQty);
+            repository.updateOrderItem(item);
+        }
     }
 
     public String generateOrderNumber() {
@@ -104,19 +144,6 @@ public class OrderService {
         return repository.getCart(chatId);
     }
 
-    public List<CartItemDto> getCartItemsDto(String chatId) {
-        Order cart = getCart(chatId);
-
-        if (cart == null) return new ArrayList<>();
-
-        return cart.getItems().stream().map(item -> new CartItemDto(
-                item.getFood().getId(),
-                item.getFood().getName(),
-                item.getQuantity(),
-                item.getPrice() * item.getQuantity()
-        )).toList();
-    }
-
     public List<Order> getUserOrders(String chatId) {
         return repository.findOrdersByClientChatId(chatId);
     }
@@ -125,26 +152,19 @@ public class OrderService {
         repository.save(cart);
     }
 
-    // ИСПРАВЛЕНО: Теперь корректно обрабатываем переход статуса
     public void checkout(String chatId) {
         Order cart = repository.getCart(chatId);
-
         if (cart == null || cart.getItems().isEmpty()) {
-            throw new RuntimeException("Cart is empty");
+            throw new IllegalStateException("Cart is empty");
         }
 
-        // ВАЖНО: Если у cart нет createdAt, устанавливаем сейчас
         if (cart.getCreatedAt() == null) {
             cart.setCreatedAt(LocalDateTime.now());
         }
-
-        // Меняем статус текущей корзины на CREATED
         cart.setStatus(OrderStatus.CREATED);
-        cart.setUpdatedAt(LocalDateTime.now());
-        cart.setUpdatedBy(chatId);
+        touch(cart, chatId);
         Order createdOrder = repository.save(cart);
 
-        // Создаём новую пустую корзину для пользователя
         Order newCart = new Order();
         newCart.setClient(cart.getClient());
         newCart.setStatus(OrderStatus.CART);
@@ -154,63 +174,43 @@ public class OrderService {
         newCart.setCreatedBy(chatId);
         repository.save(newCart);
 
-        // Отправляем уведомление о созданном заказе
-        // ВАЖНО: используем createdOrder, который уже имеет ID после save()
-        notificationService.notifyOrderCreated(createdOrder);
+        // Reload with associations so notification rendering doesn't touch detached lazy proxies.
+        Order detailed = repository.getByIdWithDetails(createdOrder.getId());
+        notificationService.notifyOrderCreated(detailed);
     }
 
-    public List<Order> getAllOrdersExceptCart() {
-        return repository.findAll();
-    }
-
-    public Order getCartItemsByUserId(String chatId) {
-        return repository.getUserOrders(chatId);
-    }
-
-    // ИСПРАВЛЕНО: Добавлена проверка null
     public void updateOrderStatus(String orderId, OrderStatus newStatus) {
         if (orderId == null || orderId.isEmpty()) {
-            throw new RuntimeException("Order ID cannot be null or empty");
+            throw new IllegalArgumentException("Order ID cannot be null or empty");
         }
-
-        Order order = getByIdWithDetails(orderId);
-
+        Order order = repository.getByIdWithDetails(orderId);
         if (order == null) {
-            throw new RuntimeException("Order not found: " + orderId);
+            throw new IllegalArgumentException("Order not found: " + orderId);
         }
-
         order.setStatus(newStatus);
         order.setUpdatedAt(LocalDateTime.now());
         repository.save(order);
 
-        if (shouldNotify(newStatus)) {
+        if (NOTIFIABLE_STATUSES.contains(newStatus)) {
             notificationService.notifyStatusChange(order, newStatus);
         }
-    }
-
-    private boolean shouldNotify(OrderStatus status) {
-        return status == OrderStatus.CONFIRMED ||
-                status == OrderStatus.PREPARING ||
-                status == OrderStatus.IN_DELIVERY ||
-                status == OrderStatus.DELIVERED ||
-                status == OrderStatus.CANCELED;
     }
 
     public Order getByIdWithDetails(String orderId) {
         return repository.getByIdWithDetails(orderId);
     }
 
-    public List<Order> getActiveOrders() {
+    /** Returns active and history orders in a single pass over the underlying list. */
+    public Map<Boolean, List<Order>> partitionActiveAndHistory() {
         return repository.findAll().stream()
-                .filter(order -> order.getStatus() != OrderStatus.CANCELED &&
-                        order.getStatus() != OrderStatus.DELIVERED)
-                .toList();
+                .collect(Collectors.partitioningBy(o -> !HISTORY_STATUSES.contains(o.getStatus())));
+    }
+
+    public List<Order> getActiveOrders() {
+        return partitionActiveAndHistory().get(Boolean.TRUE);
     }
 
     public List<Order> getHistoryOrders() {
-        return repository.findAll().stream()
-                .filter(order -> order.getStatus() == OrderStatus.CANCELED || order.getStatus() == OrderStatus.DELIVERED)
-                .toList();
+        return partitionActiveAndHistory().get(Boolean.FALSE);
     }
-
 }

@@ -2,7 +2,6 @@ package uz.pdp.restaurantproject.repository.impl;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityTransaction;
-import jakarta.persistence.TypedQuery;
 import uz.pdp.restaurantproject.config.JPAConfig;
 import uz.pdp.restaurantproject.criteria.BaseCriteria;
 import uz.pdp.restaurantproject.model.Order;
@@ -14,26 +13,23 @@ import uz.pdp.restaurantproject.repository.OrderRepository;
 import java.util.List;
 import java.util.Optional;
 
-public class OrderRepositoryImpl implements OrderRepository {
+public final class OrderRepositoryImpl implements OrderRepository {
 
-    private static OrderRepositoryImpl instance;
+    private static final OrderRepositoryImpl INSTANCE = new OrderRepositoryImpl();
+
+    private OrderRepositoryImpl() {}
 
     public static OrderRepository getInstance() {
-        if (instance == null) {
-            instance = new OrderRepositoryImpl();
-        }
-        return instance;
+        return INSTANCE;
     }
 
     @Override
     public Optional<Order> findById(String id) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-
+        EntityManager em = JPAConfig.getEntityManager();
         try {
-            Order order = entityManager.find(Order.class, id);
-            return Optional.ofNullable(order);
+            return Optional.ofNullable(em.find(Order.class, id));
         } finally {
-            entityManager.close();
+            em.close();
         }
     }
 
@@ -41,142 +37,116 @@ public class OrderRepositoryImpl implements OrderRepository {
     public Order save(Order order) {
         EntityManager em = JPAConfig.getEntityManager();
         EntityTransaction tx = em.getTransaction();
-
         try {
             tx.begin();
+            Order managed = (order.getId() != null && em.find(Order.class, order.getId()) != null)
+                    ? em.merge(order)
+                    : persistAndReturn(em, order);
 
-            Order managedOrder;
-
-            if (order.getId() == null) {
-                em.persist(order);
-                managedOrder = order;
-            } else {
-                managedOrder = em.merge(order);
+            // Touch fetch-joined collections so callers can read them after the EM closes.
+            if (managed.getItems() != null) {
+                managed.getItems().size();
+                managed.getItems().forEach(item -> {
+                    if (item.getFood() != null) {
+                        item.getFood().getName();
+                    }
+                });
             }
-
+            if (managed.getClient() != null) {
+                managed.getClient().getChatId();
+            }
             tx.commit();
-            return managedOrder;
-
-        } catch (Exception e) {
+            return managed;
+        } catch (RuntimeException e) {
             if (tx.isActive()) tx.rollback();
-            throw new RuntimeException("Ошибка сохранения заказа", e);
+            throw e;
         } finally {
             em.close();
         }
     }
 
+    private static Order persistAndReturn(EntityManager em, Order order) {
+        em.persist(order);
+        return order;
+    }
+
     @Override
     public void delete(Order order) {
-        // Реализация при необходимости
+        // Hard-delete intentionally unsupported; orders are kept for history.
     }
 
     @Override
     public DataDto<List<Order>> findAll(BaseCriteria criteria) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-        TypedQuery<Order> query = entityManager.createQuery(
-                "SELECT o FROM OrderItem o WHERE o.food.name = :foodName", Order.class);
-        List<Order> orders = query.getResultList();
-
-        return new DataDto<>(orders, 1);
+        // Currently unused by the application. Returns all non-cart orders, ignoring criteria.
+        return new DataDto<>(findAll(), 0);
     }
 
     @Override
     public List<Order> findAll() {
         EntityManager em = JPAConfig.getEntityManager();
-
         try {
-            String jpql = """
-            SELECT DISTINCT o FROM Order o
-            LEFT JOIN FETCH o.items i
-            LEFT JOIN FETCH i.food f
-            LEFT JOIN FETCH o.client c
-            WHERE o.status != 'CART'
-            ORDER BY o.createdAt DESC
-            """;
-
-            List<Order> orders = em.createQuery(jpql, Order.class).getResultList();
-
-            // Инициализируем коллекции пока EntityManager открыт
-            orders.forEach(o -> {
-                if (o.getItems() != null) {
-                    o.getItems().size();
-                }
-                if (o.getClient() != null) {
-                    o.getClient().getChatId(); // Инициализируем клиента
-                }
-            });
-
+            List<Order> orders = em.createQuery("""
+                    SELECT DISTINCT o FROM Order o
+                    LEFT JOIN FETCH o.items i
+                    LEFT JOIN FETCH i.food f
+                    LEFT JOIN FETCH o.client c
+                    WHERE o.status <> :cart
+                    ORDER BY o.createdAt DESC
+                    """, Order.class)
+                    .setParameter("cart", OrderStatus.CART)
+                    .getResultList();
+            initializeOrders(orders);
             return orders;
         } finally {
             em.close();
         }
     }
 
-    // ИСПРАВЛЕНО: Загружаем ВСЁ сразу через JOIN FETCH
+    private static void initializeOrders(List<Order> orders) {
+        for (Order order : orders) {
+            if (order.getItems() != null) order.getItems().size();
+            if (order.getClient() != null) order.getClient().getChatId();
+        }
+    }
+
+    @Override
     public Order getByIdWithDetails(String orderId) {
         EntityManager em = JPAConfig.getEntityManager();
-
         try {
-            String jpql = """
-                SELECT DISTINCT o FROM Order o
-                LEFT JOIN FETCH o.items i
-                LEFT JOIN FETCH i.food
-                LEFT JOIN FETCH o.client
-                WHERE o.id = :id
-                """;
-
-            Order order = em.createQuery(jpql, Order.class)
+            Order order = em.createQuery("""
+                    SELECT DISTINCT o FROM Order o
+                    LEFT JOIN FETCH o.items i
+                    LEFT JOIN FETCH i.food
+                    LEFT JOIN FETCH o.client
+                    WHERE o.id = :id
+                    """, Order.class)
                     .setParameter("id", orderId)
                     .getSingleResult();
-
-            // Инициализируем коллекцию пока EntityManager открыт
             if (order.getItems() != null) {
                 order.getItems().size();
             }
-
             return order;
         } finally {
             em.close();
         }
     }
 
-    public Order findActiveCartByClientChatId(String chatId) {
-        EntityManager em = JPAConfig.getEntityManager();
-
-        try {
-            return em.createQuery(
-                            "SELECT o FROM Order o " +
-                                    "LEFT JOIN FETCH o.items " +
-                                    "WHERE o.client.chatId = :chatId AND o.status = 'CART'",
-                            Order.class)
-                    .setParameter("chatId", chatId)
-                    .getSingleResult();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            em.close();
-        }
-    }
-
+    @Override
     public Order getCart(String chatId) {
         EntityManager em = JPAConfig.getEntityManager();
         try {
-            String jpql = """
-            SELECT DISTINCT o
-            FROM Order o
-            JOIN FETCH o.items i
-            JOIN FETCH i.food
-            JOIN FETCH o.client c
-            WHERE c.chatId = :chatId
-              AND o.status = 'CART'
-            """;
-
-            List<Order> result = em.createQuery(jpql, Order.class)
+            List<Order> result = em.createQuery("""
+                    SELECT DISTINCT o FROM Order o
+                    LEFT JOIN FETCH o.items i
+                    LEFT JOIN FETCH i.food
+                    LEFT JOIN FETCH o.client c
+                    WHERE c.chatId = :chatId AND o.status = :cart
+                    """, Order.class)
                     .setParameter("chatId", chatId)
+                    .setParameter("cart", OrderStatus.CART)
+                    .setMaxResults(1)
                     .getResultList();
-
             return result.isEmpty() ? null : result.get(0);
-
         } finally {
             em.close();
         }
@@ -184,76 +154,57 @@ public class OrderRepositoryImpl implements OrderRepository {
 
     @Override
     public void updateOrderItem(OrderItem existingItem) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-
-        try {
-            entityManager.getTransaction().begin();
-            entityManager.merge(existingItem);
-            entityManager.getTransaction().commit();
-        } catch (Exception e) {
-            if (entityManager.getTransaction().isActive()) {
-                entityManager.getTransaction().rollback();
-            }
-            throw new RuntimeException("Ошибка обновления OrderItem", e);
-        } finally {
-            entityManager.close();
-        }
+        runInTransaction(em -> em.merge(existingItem));
     }
 
     @Override
     public void createOrderItem(OrderItem newItem) {
-        EntityManager entityManager = JPAConfig.getEntityManager();
-
-        try {
-            entityManager.getTransaction().begin();
-            entityManager.persist(newItem);
-            entityManager.getTransaction().commit();
-        } catch (Exception e) {
-            if (entityManager.getTransaction().isActive()) {
-                entityManager.getTransaction().rollback();
-            }
-            throw new RuntimeException("Ошибка создания OrderItem", e);
-        } finally {
-            entityManager.close();
-        }
+        runInTransaction(em -> em.persist(newItem));
     }
 
-    public Order getUserOrders(String chatId) {
-        EntityManager em = JPAConfig.getEntityManager();
-
-        try {
-            return em.createQuery(
-                            "SELECT o FROM Order o " +
-                                    "LEFT JOIN FETCH o.items " +
-                                    "WHERE o.client.chatId = :chatId AND o.status = :status",
-                            Order.class)
-                    .setParameter("chatId", chatId)
-                    .setParameter("status", OrderStatus.CART)
-                    .getSingleResult();
-        } catch (Exception e) {
-            return null;
-        } finally {
-            em.close();
-        }
+    @Override
+    public void deleteOrderItem(OrderItem item) {
+        runInTransaction(em -> {
+            OrderItem managed = em.contains(item) ? item : em.merge(item);
+            em.remove(managed);
+        });
     }
 
     @Override
     public List<Order> findOrdersByClientChatId(String chatId) {
         EntityManager em = JPAConfig.getEntityManager();
         try {
-            String jpql = """
-                SELECT DISTINCT o FROM Order o
-                LEFT JOIN FETCH o.items i
-                LEFT JOIN FETCH i.food
-                WHERE o.client.chatId = :chatId
-                AND o.status != :status
-                ORDER BY o.createdAt DESC
-                """;
-
-            return em.createQuery(jpql, Order.class)
+            List<Order> orders = em.createQuery("""
+                    SELECT DISTINCT o FROM Order o
+                    LEFT JOIN FETCH o.items i
+                    LEFT JOIN FETCH i.food
+                    WHERE o.client.chatId = :chatId AND o.status <> :cart
+                    ORDER BY o.createdAt DESC
+                    """, Order.class)
                     .setParameter("chatId", chatId)
-                    .setParameter("status", OrderStatus.CART)
+                    .setParameter("cart", OrderStatus.CART)
                     .getResultList();
+            initializeOrders(orders);
+            return orders;
+        } finally {
+            em.close();
+        }
+    }
+
+    private interface EmOp {
+        void apply(EntityManager em);
+    }
+
+    private static void runInTransaction(EmOp op) {
+        EntityManager em = JPAConfig.getEntityManager();
+        EntityTransaction tx = em.getTransaction();
+        try {
+            tx.begin();
+            op.apply(em);
+            tx.commit();
+        } catch (RuntimeException e) {
+            if (tx.isActive()) tx.rollback();
+            throw e;
         } finally {
             em.close();
         }
